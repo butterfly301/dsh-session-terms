@@ -62,11 +62,9 @@ async function fixture(color) {
 }
 
 async function chooseColor(container, color) {
-  const picker = container.querySelector('input[type="color"]');
-  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(picker, color);
-  await React.act(async () => {
-    picker.dispatchEvent(new Event('change', { bubbles: true }));
-  });
+  await click(button(container, 'color'));
+  await input(container.querySelector('.st-color-hex'), color);
+  await click(button(container, 'closeColorPicker'));
 }
 
 test('color selection previews and saves the chosen value with the edit baseline', async () => {
@@ -88,7 +86,10 @@ test('color selection previews and saves the chosen value with the edit baseline
 test('default color resets an existing selection and reload refreshes the color baseline', async () => {
   const f = await fixture('#2868b4');
   try {
-    assert.equal(f.container.querySelector('input[type="color"]').value, '#2868b4');
+    assert.equal(
+      f.container.querySelector('.st-color-swatch').style.backgroundColor,
+      'rgb(40, 104, 180)',
+    );
     await click(button(f.container, 'defaultColor'));
     assert.equal(f.container.querySelector('.st-color-preview').style.color, '');
     await submit(f.container.querySelector('form'));
@@ -102,9 +103,15 @@ test('default color resets an existing selection and reload refreshes the color 
     g.updateElsewhere('Alpha', 'original', '#ab2378');
     await g.refresh();
     assert.equal(button(g.container, 'save').disabled, true);
-    assert.equal(g.container.querySelector('input[type="color"]').value, '#b45309');
+    assert.equal(
+      g.container.querySelector('.st-color-swatch').style.backgroundColor,
+      'rgb(180, 83, 9)',
+    );
     await click(button(g.container, 'reloadLatest'));
-    assert.equal(g.container.querySelector('input[type="color"]').value, '#ab2378');
+    assert.equal(
+      g.container.querySelector('.st-color-swatch').style.backgroundColor,
+      'rgb(171, 35, 120)',
+    );
     assert.equal(button(g.container, 'save').disabled, false);
   } finally {
     await g.close();

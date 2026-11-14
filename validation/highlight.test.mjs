@@ -84,6 +84,164 @@ function styles(document) {
   return [...document.querySelectorAll('style[data-session-terms-highlights]')];
 }
 
+test('empty and default-color libraries never observe or retain message churn', async (t) => {
+  const f = fixture(t);
+  let observations = 0,
+    deliveries = 0;
+  class Observer {
+    constructor(callback) {
+      this.observer = new f.dom.window.MutationObserver((records) => {
+        deliveries++;
+        callback(records);
+      });
+    }
+    observe(...args) {
+      observations++;
+      this.observer.observe(...args);
+    }
+    disconnect() {
+      this.observer.disconnect();
+    }
+  }
+  const layer = f.mount(f.root, { MutationObserver: Observer });
+  for (const terms of [[], [term('api', 'API', null)]]) {
+    layer.setTerms(terms);
+    for (let i = 0; i < 20; i++) {
+      const node = f.document.createElement('section');
+      node.innerHTML = assistant('<p>API</p>');
+      f.root.append(node);
+      await f.settle();
+      node.remove();
+      await f.settle();
+    }
+  }
+  assert.equal(observations, 0);
+  assert.equal(deliveries, 0);
+  assert.equal(f.clock.pending.size, 0);
+  assert.equal(f.registry.size, 0);
+});
+
+test('resetting the last color disconnects observation, cancels pending work and can reactivate', async (t) => {
+  const f = fixture(t, assistant('<p>API</p>'));
+  let observations = 0,
+    disconnects = 0;
+  class Observer {
+    constructor(callback) {
+      this.observer = new f.dom.window.MutationObserver(callback);
+    }
+    observe(...args) {
+      observations++;
+      this.observer.observe(...args);
+    }
+    disconnect() {
+      disconnects++;
+      this.observer.disconnect();
+    }
+  }
+  const layer = f.mount(f.root, { MutationObserver: Observer });
+  layer.setTerms([term('api', 'API')]);
+  f.root.querySelector('p').firstChild.nodeValue = 'API API';
+  await Promise.resolve();
+  const late = [...f.clock.pending.values()][0].callback;
+  layer.setTerms([term('api', 'API', null)]);
+  assert.equal(disconnects, 1);
+  assert.equal(f.clock.pending.size, 0);
+  assert.equal(f.registry.size, 0);
+  late();
+  f.root.querySelector('p').textContent = 'API API API';
+  await f.settle();
+  assert.equal(f.registry.size, 0);
+  layer.setTerms([term('api', 'API')]);
+  assert.equal(observations, 2);
+  assert.deepEqual(painted(f.registry), ['API', 'API', 'API']);
+});
+
+test('one streamed source updates only its own ranges without enumerating historical sources', async (t) => {
+  const f = fixture(t, Array.from({ length: 1000 }, () => assistant('<p>API</p>')).join(''));
+  let added = 0,
+    deleted = 0,
+    writes = 0,
+    scans = 0;
+  class Highlight extends Set {
+    add(range) {
+      added++;
+      return super.add(range);
+    }
+    delete(range) {
+      deleted++;
+      return super.delete(range);
+    }
+  }
+  const set = f.registry.set.bind(f.registry);
+  f.registry.set = (...args) => {
+    writes++;
+    return set(...args);
+  };
+  const layer = f.mount(f.root, { Highlight });
+  layer.setTerms([term('api', 'API')]);
+  const highlight = [...f.registry.values()][0];
+  const untouched = [...highlight][0];
+  const query = f.root.querySelectorAll.bind(f.root);
+  f.root.querySelectorAll = (...args) => {
+    scans++;
+    return query(...args);
+  };
+  added = 0;
+  deleted = 0;
+  writes = 0;
+  f.root.lastElementChild.querySelector('p').firstChild.nodeValue = 'API changed';
+  await f.settle();
+  assert.equal(added, 1);
+  assert.equal(deleted, 1);
+  assert.equal(writes, 0);
+  assert.equal(scans, 0);
+  assert.equal([...f.registry.values()][0], highlight);
+  assert(highlight.has(untouched));
+  assert.equal(highlight.size, 1000);
+});
+
+test('term reorder and note-only changes preserve existing highlight objects and ranges', (t) => {
+  const f = fixture(t, assistant('<p>API 灯塔</p>'));
+  const layer = f.mount();
+  const terms = [term('api', 'API'), term('tower', '灯塔', '#654321')];
+  layer.setTerms(terms);
+  const original = [...f.registry.values()];
+  const ranges = original.map((highlight) => [...highlight][0]);
+  layer.setTerms(terms.toReversed().map((item) => ({ ...item, note: 'new note' })));
+  assert.deepEqual([...f.registry.values()], original);
+  original.forEach((highlight, index) => assert(highlight.has(ranges[index])));
+});
+
+test('detached source cleanup survives marker and class removal before observer delivery', async (t) => {
+  for (const streaming of [false, true]) {
+    const html = streaming
+      ? '<section data-chat-flow-kind="assistant-step"><div class="xMeOpW_body"><div class="_markdown_rve47_5"><p>API</p></div></div></section>'
+      : assistant('<p>API</p>');
+    const f = fixture(t, html);
+    f.mount().setTerms([term('api', 'API')]);
+    const owner = f.root.querySelector('[data-text-interaction-source], ._markdown_rve47_5');
+    assert.equal(painted(f.registry).length, 1);
+    f.root.firstElementChild.remove();
+    owner.removeAttribute('data-text-interaction-source');
+    owner.removeAttribute('class');
+    await f.settle();
+    assert.equal(f.registry.size, 0);
+    assert.equal(styles(f.document)[0].textContent, '');
+    assert.equal(f.clock.pending.size, 0);
+  }
+});
+
+test('removed and reinserted sources retain only their current ranges', async (t) => {
+  const f = fixture(t, assistant('<p>API</p>'));
+  f.mount().setTerms([term('api', 'API')]);
+  const flow = f.root.firstElementChild;
+  flow.remove();
+  flow.querySelector('p').textContent = 'API API';
+  f.root.append(flow);
+  await f.settle();
+  assert.deepEqual(painted(f.registry), ['API', 'API']);
+});
+
 test('eligibility attribute changes clear and restore cached prose ranges', async (t) => {
   const f = fixture(t, assistant('<p>API</p>'));
   const highlighter = f.mount();

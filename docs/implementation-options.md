@@ -16,6 +16,7 @@
 | -------------------------------------------------- | -------------------------------------------- |
 | [index.js](../index.js)                            | 存储域、命令与查询工具注册                   |
 | [terms.mjs](../src/terms.mjs)                      | 词条数据、会话仓库、匹配和写入校验           |
+| [color.mjs](../src/color.mjs)                      | 前后端共用的颜色格式规则                     |
 | [context.mjs](../src/context.mjs)                  | 模型请求中的术语匹配与上下文去重             |
 | [i18n.mjs](../src/i18n.mjs)                        | Host 语言资源读取与回退                      |
 | [src/client.js](../src/client.js)                  | 浏览器模块入口                               |
@@ -23,6 +24,7 @@
 | [host.mjs](../src/client/host.mjs)                 | 命令通信与记录显示过滤                       |
 | [state.mjs](../src/client/state.mjs)               | 会话缓存、请求互斥、刷新、撤销和闲置释放     |
 | [editor.mjs](../src/client/editor.mjs)             | 编辑草稿、版本基线和冲突恢复                 |
+| [color-field.mjs](../src/client/color-field.mjs)   | 颜色选择与主题默认色显示                     |
 | [manager.mjs](../src/client/manager.mjs)           | 搜索、排序、多选和删除确认                   |
 | [dock.mjs](../src/client/dock.mjs)                 | 术语栏、备注浮层和选择入口                   |
 | [common.mjs](../src/client/common.mjs)             | 按钮、图标、弹窗和状态提示                   |
@@ -31,13 +33,17 @@
 
 ## 术语颜色
 
-词条的可选 `color` 字段保存六位十六进制颜色，`null` 表示默认颜色，旧数据中的缺失值也按默认颜色处理。颜色修改参与词条版本与并发校验，模型读取的内容仍为名称和备注。
+词条的可选 `color` 字段保存六位十六进制颜色，`null` 表示默认颜色，旧数据中的缺失值也按默认颜色处理。颜色格式由 [color.mjs](../src/color.mjs) 统一定义。颜色修改参与词条版本与并发校验，模型读取的内容仍为名称和备注。
 
-[highlight.mjs](../src/client/highlight.mjs)通过 CSS Custom Highlight API 为当前会话的用户消息和 AI 回复正文着色。每个挂载的会话拥有独立的高亮注册键、样式与观察器。正文变动合并后刷新，未变化的正文复用范围缓存。卸载时释放本会话的资源。
+选色器提供饱和度与明度色块、色相条、RGB 数值和 Hex 输入，颜色始终不透明。默认色板与预览跟随主题正文颜色。RGB 与 HSV 的转换位于 [color-values.mjs](../src/client/color-values.mjs)。
+
+[highlight.mjs](../src/client/highlight.mjs)通过 CSS Custom Highlight API 为当前会话的用户消息和 AI 回复正文着色。每段正文拥有自己的范围记录，文字变动合并后只替换受影响的范围，同一颜色复用高亮对象。空词库或全部使用默认颜色时停止观察并释放范围。卸载时释放本会话的资源。
 
 匹配逻辑共用 [matching.mjs](../src/matching.mjs)，保留英文词边界、大小写和长词优先规则。文字范围可跨越行内格式节点，段落和代码块构成匹配边界。思考过程、工具输出、输入草稿及嵌套会话排除在着色范围外。
 
-用户正文和流式回复的识别包含 DSH `0.2.2-rc.1` 的 DOM 结构适配，升级宿主时需复核。浏览器缺少 Highlight API 时使用默认显示。运行 `node validation/browser-colors.mjs` 可打开独立浏览器测试页，检查颜色编辑、默认恢复、流式文字和主题显示，完成后停止该进程。
+用户正文和流式回复的识别包含 DSH `0.2.2-rc.1` 的 DOM 结构适配，升级宿主时需复核。浏览器缺少 Highlight API 时使用默认显示。
+
+运行 `node validation/browser-colors.mjs` 可打开独立浏览器测试页，检查颜色编辑、默认恢复、流式文字和主题显示，完成后停止该进程。测试页通过本地 HTTP 调用真实词条仓库，数据保存在内存中。
 
 ## 数据与并发
 

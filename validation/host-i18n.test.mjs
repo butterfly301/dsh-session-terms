@@ -153,7 +153,7 @@ async function openHost(root, defaultLocale) {
   await mkdir(join(root, 'src'));
   await mkdir(join(root, 'locale'));
   await copyFile(new URL('../index.js', import.meta.url), join(root, 'index.mjs'));
-  for (const name of ['terms.mjs', 'matching.mjs', 'i18n.mjs'])
+  for (const name of ['terms.mjs', 'color.mjs', 'matching.mjs', 'i18n.mjs'])
     await copyFile(new URL(`../src/${name}`, import.meta.url), join(root, 'src', name));
   await json(join(root, 'locale'), 'config', { defaultLocale });
   for (const language of ['en', 'fr', 'es'])

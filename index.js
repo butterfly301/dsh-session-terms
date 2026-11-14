@@ -8,6 +8,7 @@ import {
   DOMAIN_NAME,
   LOOKUP_TOOL,
 } from './src/terms.mjs';
+import { TERM_COLOR_PATTERN, TERM_COLOR_LENGTH } from './src/color.mjs';
 import { installContextGate } from './src/context.mjs';
 import { readLocales, translate } from './src/i18n.mjs';
 
@@ -17,12 +18,7 @@ const termSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   note: z.string(),
-  color: z
-    .string()
-    .length(7)
-    .regex(/^#[0-9a-fA-F]{6}$/)
-    .nullable()
-    .optional(),
+  color: z.string().length(TERM_COLOR_LENGTH).regex(TERM_COLOR_PATTERN).nullable().optional(),
   version: z.number().int().positive(),
   order: z.number().int().nonnegative(),
 });

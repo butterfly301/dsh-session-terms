@@ -1,3 +1,5 @@
+import { isTermColor } from '../color.mjs';
+
 function validState(state) {
   if (
     !state ||
@@ -18,10 +20,7 @@ function validState(state) {
       !term.name.trim() ||
       term.name !== term.name.trim() ||
       typeof term.note !== 'string' ||
-      (term.color != null &&
-        (typeof term.color !== 'string' ||
-          term.color.length !== 7 ||
-          !/^#[0-9a-f]{6}$/i.test(term.color))) ||
+      (term.color != null && !isTermColor(term.color)) ||
       !Number.isSafeInteger(term.version) ||
       term.version < 1 ||
       !Number.isSafeInteger(term.order) ||

@@ -1,6 +1,9 @@
+import { createColorField } from './color-field.mjs';
+
 export function createTermEditor({ React, useTerms, ui }) {
   const { createElement: h, useId, useRef, useState } = React;
   const { button, Modal, Status } = ui;
+  const ColorField = createColorField(React);
 
   return function TermEditor({ sessionId, term, initialName = '', onClose, t }) {
     const [state, store] = useTerms(sessionId);
@@ -115,31 +118,7 @@ export function createTermEditor({ React, useTerms, ui }) {
               disabled: state.busy,
             }),
           ),
-          h(
-            'div',
-            { className: 'st-color-row' },
-            h(
-              'label',
-              { className: 'st-color-label' },
-              t('color'),
-              h('input', {
-                type: 'color',
-                className: 'st-color-input',
-                value: color ?? '#c05a42',
-                onChange: (event) => setColor(event.target.value),
-                disabled: busy,
-              }),
-            ),
-            button(t('defaultColor'), () => setColor(null), {
-              disabled: busy,
-              'aria-pressed': color === null,
-            }),
-            h(
-              'span',
-              { className: 'st-color-preview', style: { color: color ?? undefined } },
-              name.trim() || t('colorPreview'),
-            ),
-          ),
+          h(ColorField, { color, onChange: setColor, preview: name.trim(), disabled: busy, t }),
           notice ? h('p', { role: 'status' }, t('duplicate')) : null,
           missing || conflict
             ? h(

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isTermColor } from './color.mjs';
 import { findTermOccurrences } from './matching.mjs';
 
 export const DOMAIN_NAME = 'session_terms';
@@ -36,8 +37,7 @@ function noteOf(value) {
 }
 function colorOf(value) {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value) || value.length !== 7)
-    throw new TermsError('invalid-color');
+  if (!isTermColor(value)) throw new TermsError('invalid-color');
   return value.toLowerCase();
 }
 function checkDuplicate(state, name, except) {
