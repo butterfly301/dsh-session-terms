@@ -46,6 +46,10 @@ AI 可以通过 `session_terms_lookup` 查询本会话术语。备注作为背�
 
 ## 示例
 
+将项目中的长名称收录为术语，需要时点击插入，无需翻找上下文或反复输入。
+
+![收录项目长名称，需要时点击词条插入消息](docs/images/long-term-reuse.png)
+
 首次提到术语时，AI 根据备注回答。
 
 ![首次读取术语备注，回答可打开的门和使用代价](docs/images/term-first-match.png)
