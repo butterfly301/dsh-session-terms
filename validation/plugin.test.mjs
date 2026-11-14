@@ -75,6 +75,43 @@ function host() {
 
 const session = (select) => select({ running: true, removed: false, subagent: null });
 
+test('collapsed dock reports insertion failures locally and clears the notice after recovery', async () => {
+  const current = host();
+  await current.ctx.remote.commands.execute(
+    'session',
+    '/session-terms ' + JSON.stringify({ action: 'create', payload: { name: 'Alpha', note: '' } }),
+    [],
+  );
+  createClientPlugin({ React, resources: { dictionaries: {}, errorCodes: [] }, styles: '' }).apply(
+    current.ctx,
+  );
+  const Dock = current.slots.get('conversation.input.dock').Component;
+  let available = false;
+  const mounted = await mount(
+    React.createElement(Dock, {
+      sessionId: 'session',
+      useSession: session,
+      t: (key) => key,
+      inputActions: { captureInsertion: () => ({}), insertText: () => available },
+    }),
+  );
+  try {
+    assert.equal(
+      mounted.container.querySelector('.st-root').getAttribute('data-expanded'),
+      'false',
+    );
+    await click(button(mounted.container, 'Alpha'));
+    assert.equal(mounted.container.querySelector('[role="alert"]')?.textContent, 'insertFailed');
+    assert.equal(mounted.container.textContent.includes('{"ok"'), false);
+    available = true;
+    await click(button(mounted.container, 'Alpha'));
+    assert.equal(mounted.container.querySelector('[role="alert"]'), null);
+  } finally {
+    await mounted.unmount();
+    current.dispose();
+  }
+});
+
 test('actual registered selection actions leave the editor in the dock after dismissal', async () => {
   const current = host();
   createClientPlugin({
@@ -258,6 +295,139 @@ test('registered dock scopes colors to its session and releases highlights when 
   }
   assert.deepEqual([...highlights.keys()], ['other-plugin']);
   assert.equal(document.head.querySelectorAll('[data-session-terms-highlights]').length, 0);
+});
+
+test('successful chip insertion returns focus through the rc3 conversation service', async () => {
+  const current = host();
+  await current.ctx.remote.commands.execute(
+    'session',
+    '/session-terms ' +
+      JSON.stringify({
+        action: 'create',
+        payload: { name: 'Inserted term', note: '' },
+      }),
+    [],
+  );
+  const sessionContext = {};
+  const calls = [];
+  current.ctx.sessions.binding = (id) => (id === 'session' ? { ctx: sessionContext } : undefined);
+  let unavailable = false;
+  current.ctx.conversation = {
+    input: {
+      for(scope) {
+        assert.equal(scope, sessionContext);
+        return {
+          focus() {
+            calls.push('focus');
+            if (unavailable) throw Error('unavailable');
+          },
+        };
+      },
+    },
+  };
+  const plugin = createClientPlugin({
+    React,
+    resources: { dictionaries: {}, errorCodes: [] },
+    styles: '',
+  });
+  assert(
+    plugin.inject.includes('conversation'),
+    'Cordis must admit access to the conversation service',
+  );
+  plugin.apply(current.ctx);
+  const Dock = current.slots.get('conversation.input.dock').Component;
+  const span = { start: 1, end: 1, draftRev: 4 };
+  const mounted = await mount(
+    React.createElement(Dock, {
+      sessionId: 'session',
+      useSession: session,
+      t: (key) => key,
+      inputActions: {
+        captureInsertion: () => span,
+        insertText(text, captured) {
+          assert.equal(text, 'Inserted term');
+          assert.equal(captured, span);
+          calls.push('insert');
+          return true;
+        },
+      },
+    }),
+  );
+  try {
+    await click(button(mounted.container, 'Inserted term'));
+    assert.deepEqual(calls, ['insert', 'focus']);
+    unavailable = true;
+    await click(button(mounted.container, 'Inserted term'));
+    assert.deepEqual(calls, ['insert', 'focus', 'insert', 'focus']);
+  } finally {
+    await mounted.unmount();
+    current.dispose();
+  }
+});
+
+test('rc3 continuable sessions admit selection actions without the removed parentAvailable field', async () => {
+  const current = host();
+  createClientPlugin({ React, resources: { dictionaries: {}, errorCodes: [] }, styles: '' }).apply(
+    current.ctx,
+  );
+  const Actions = current.slots.get('conversation.chat.text-interaction').Component;
+  let show;
+  let dismissals = 0;
+  let inserted;
+  function Conversation() {
+    const [snapshot, setSnapshot] = React.useState({
+      removed: false,
+      subagent: { address: { mode: 'continuable' } },
+    });
+    const [visible, setVisible] = React.useState(true);
+    show = (value) => {
+      setSnapshot(value);
+      setVisible(true);
+    };
+    return visible
+      ? React.createElement(Actions, {
+          sessionId: 'child',
+          useSession: (select) => select(snapshot),
+          t: (key) => key,
+          readText: () => 'Selected child term',
+          clearSelection() {},
+          dismiss() {
+            dismissals++;
+            setVisible(false);
+          },
+          inputActions: {
+            insertQuote(text) {
+              inserted = text;
+              return true;
+            },
+          },
+        })
+      : null;
+  }
+  const mounted = await mount(React.createElement(Conversation));
+  try {
+    assert(button(mounted.container, 'pin'));
+    await click(button(mounted.container, 'quoteText'));
+    assert.equal(inserted, 'Selected child term');
+    assert.equal(dismissals, 1);
+    await React.act(async () => {
+      show({ removed: false, subagent: { address: { mode: 'one-shot' } } });
+    });
+    assert.equal(mounted.container.querySelector('.st-selection-actions'), null);
+    assert.equal(dismissals, 2);
+    await React.act(async () => {
+      show({ removed: true, subagent: null });
+    });
+    assert.equal(mounted.container.querySelector('.st-selection-actions'), null);
+    assert.equal(dismissals, 3);
+    await React.act(async () => {
+      show({ removed: false, subagent: null });
+    });
+    assert(button(mounted.container, 'pin'));
+  } finally {
+    await mounted.unmount();
+    current.dispose();
+  }
 });
 
 test('published artifact registers successfully and requests only the host React module', async () => {

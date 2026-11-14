@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "dsh": "0.2.2-rc.1"
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
   },
   "exports": {
     ".": "./index.js",
@@ -35,15 +35,15 @@
       "platform": "web",
       "immediately": true,
       "inject": [
-        "dsh-client-ui-conversation",
-        "dsh-client-ui-session",
-        "dsh-client-ui-chat"
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-chat"
       ]
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-storage-domain": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.3.0-0",
     "zod": "^4.0.0"
   },
   "peerDependenciesMeta": {

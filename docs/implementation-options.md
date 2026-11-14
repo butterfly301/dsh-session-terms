@@ -2,7 +2,7 @@
 
 ## 宿主接入
 
-插件以独立 bundle 安装，面向 DSH `0.2.2-rc.1`。
+插件以独立 bundle 安装，声明兼容 DSH `>=0.2.2-rc.1 <0.3.0-0`，当前集成检查使用 `0.2.2-rc.3`。客户端清单使用带 `@deepseek-ai/` 前缀的模块标识声明加载依赖。
 
 输入区使用 `conversation.input.dock` 槽位，`order` 为 30。术语栏占据输入卡片前的一行布局空间。其他插件替换默认输入区时，可能影响该槽位显示。
 
@@ -41,7 +41,7 @@
 
 匹配逻辑共用 [matching.mjs](../src/matching.mjs)，保留英文词边界、大小写和长词优先规则。文字范围可跨越行内格式节点，段落和代码块构成匹配边界。思考过程、工具输出、输入草稿及嵌套会话排除在着色范围外。
 
-用户正文和流式回复的识别包含 DSH `0.2.2-rc.1` 的 DOM 结构适配，升级宿主时需复核。浏览器缺少 Highlight API 时使用默认显示。
+用户正文和流式回复的识别包含宿主 DOM 结构适配。流式正文只在 Assistant 正文容器的直接子元素中识别 Markdown 类名前缀，构建哈希变化不会改变匹配。升级宿主时需复核这些结构。浏览器缺少 Highlight API 时使用默认显示。
 
 运行 `node validation/browser-colors.mjs` 可打开独立浏览器测试页，检查颜色编辑、默认恢复、流式文字和主题显示，完成后停止该进程。测试页通过本地 HTTP 调用真实词条仓库，数据保存在内存中。
 
@@ -59,7 +59,7 @@ Host 按 `sessionId` 保存数据，同一会话的写入串行执行。`expecte
 
 去重依据相同 ID 最近一次完整名称与备注，检查插件消息及有效查询结果。提供给模型的词条结构为 `{ id, name, note }`。
 
-适配依赖 DSH `0.2.2-rc.1` 的请求准备顺序。升级宿主时，重点验证压缩后内容恢复、工具结果剪枝、取消、失败重试和日志重建。其他插件若在背景回调中修改上下文，也需要验证交互行为。
+请求刷新适配已在 DSH `0.2.2-rc.3` 验证。变量提供器标记预览组装对象，刷新探针排除这些对象，并在卸载或取消后停止追加。宿主尚无公开的原子最终入场事件；`agent.inject()` 面向后续步骤，不能修复当前请求准备期间发生的压缩。因此该适配仍依赖请求准备顺序，升级时需验证压缩、工具结果剪枝、取消、重试和日志重建。其他插件自行调用刷新或在后续提供器中修改状态时，也需验证交互行为。
 
 ## 语言资源与构建
 
@@ -91,7 +91,7 @@ npm run format:check
 
 宿主集成测试使用 Electron 的 Node 模式运行 [run-context-gate.cjs](../validation/run-context-gate.cjs) 和 [run-host.cjs](../validation/run-host.cjs)。脚本通过 `DSH_VERIFY_MODULES` 接收 DSH 安装内的 `@deepseek-ai` 模块目录，默认路径见脚本开头。
 
-[命令显示探针](../validation/command-visibility.cjs)、[选择槽位探针](../validation/selection-slot-feasibility.cjs)和[客户端注入探针](../validation/client-injection.cjs)检查宿主扩展接口。部分探针读取宿主构建中的内部实现，升级 DSH 时需要复核。
+[版本兼容检查](../validation/runtime-compatibility.cjs)调用宿主实际的插件兼容性判断函数。[命令显示探针](../validation/command-visibility.cjs)运行宿主注册表、会话组装器和 Chat 投影，验证历史同步记录、重复读取、分页和插件重载的隐藏行为。[选择槽位探针](../validation/selection-slot-feasibility.cjs)与[客户端注入探针](../validation/client-injection.cjs)验证实际槽位、服务撤回和重新激活。探针依赖安装包中的源码或模块，升级 DSH 时需复核。
 
 ## 宿主接口边界
 

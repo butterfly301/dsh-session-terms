@@ -3,9 +3,11 @@ import { isTermColor } from '../color.mjs';
 
 const CHAT = '[data-conversation-region="chat"]';
 const FLOW = '[data-chat-flow-kind]';
-// DSH 0.2.2-rc.1: streaming Markdown has no public content marker. Keep the
-// verified body classes here, and fail closed if the host changes this structure.
-const STREAM_BODY = '.xMeOpW_body > ._markdown_rve47_5';
+// DSH 0.2.2-rc.1 and rc.3: streaming Markdown has no public content marker.
+// MarkdownText's CSS-module `markdown` token changes hashes between builds.
+// This private fallback accepts that token only as a direct assistant-body child;
+// validation/selection-slot-feasibility.cjs checks the installed owner contract.
+const STREAM_BODY = '.xMeOpW_body > :is([class^="_markdown_"], [class*=" _markdown_"])';
 const USER_TEXT = '[data-message-bubble] ._plainRun_fbulu_6';
 const SOURCES = `${USER_TEXT}, [data-text-interaction-source], ${STREAM_BODY}`;
 const EXCLUDED = [

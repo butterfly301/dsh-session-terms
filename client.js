@@ -1424,7 +1424,7 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   // src/client/highlight.mjs
   var CHAT = '[data-conversation-region="chat"]';
   var FLOW = "[data-chat-flow-kind]";
-  var STREAM_BODY = ".xMeOpW_body > ._markdown_rve47_5";
+  var STREAM_BODY = '.xMeOpW_body > :is([class^="_markdown_"], [class*=" _markdown_"])';
   var USER_TEXT = "[data-message-bubble] ._plainRun_fbulu_6";
   var SOURCES = `${USER_TEXT}, [data-text-interaction-source], ${STREAM_BODY}`;
   var EXCLUDED = [
@@ -1944,7 +1944,7 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
               chips?.length ? chips : query ? h("span", { className: "st-muted" }, t("noResults")) : null
             )
           ) : null,
-          expanded && state.error ? h(
+          state.error && (expanded || data) ? h(
             "div",
             { className: "st-notice" },
             h(
@@ -2002,7 +2002,7 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
       const { sessionId, useSession, dismiss, t } = props;
       const [state, store] = useTerms(sessionId);
       const enabled = useSession(
-        (session) => !session.removed && (session.subagent === null || session.subagent.address.mode === "continuable" && session.subagent.parentAvailable === true)
+        (session) => !session.removed && (session.subagent === null || session.subagent.address.mode === "continuable")
       );
       useEffect(() => {
         if (!enabled) dismiss();
@@ -2034,7 +2034,15 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   var NAMESPACE = "session-terms";
   function createClientPlugin({ React, resources, styles }) {
     return {
-      inject: ["slots", "locale", "uiConversation", "sessions", "remote", "remote.commands"],
+      inject: [
+        "slots",
+        "locale",
+        "uiConversation",
+        "conversation",
+        "sessions",
+        "remote",
+        "remote.commands"
+      ],
       apply(ctx) {
         const registry = createTermsRegistry(createTermsRequest(ctx.remote.commands));
         const ui = createUiPrimitives(React, resources.errorCodes);
@@ -2059,7 +2067,7 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
             const binding = ctx.sessions.binding(sessionId);
             if (!binding) return;
             try {
-              ctx.uiConversation.input.for(binding.ctx).focus();
+              ctx.conversation.input.for(binding.ctx).focus();
             } catch {
             }
           }

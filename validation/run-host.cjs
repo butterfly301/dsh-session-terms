@@ -3,12 +3,13 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { registerHooks } = require('node:module');
+const { createRequire, registerHooks } = require('node:module');
 const root =
   process.env.DSH_VERIFY_MODULES ||
   'D:/Program Files/DeepSeek Harness/resources/app.asar/dsh/node_modules/@deepseek-ai';
-const parentURL = pathToFileURL(path.join(root, '..', '..', 'package.json')).href;
-const load = (name) => import(pathToFileURL(path.join(root, name, 'lib/index.js')).href);
+const parentURL = pathToFileURL(path.join(root, 'dsh', 'package.json')).href;
+const installedRequire = createRequire(parentURL);
+const load = (name) => import(pathToFileURL(installedRequire.resolve(`@deepseek-ai/${name}`)).href);
 
 // The real application installs equivalent package fallback hooks during boot.
 // This isolated test redirects shipped imports without editing node_modules.

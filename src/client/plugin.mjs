@@ -10,7 +10,15 @@ const NAMESPACE = 'session-terms';
 /** The only module that knows the host's registration and lifecycle contracts. */
 export function createClientPlugin({ React, resources, styles }) {
   return {
-    inject: ['slots', 'locale', 'uiConversation', 'sessions', 'remote', 'remote.commands'],
+    inject: [
+      'slots',
+      'locale',
+      'uiConversation',
+      'conversation',
+      'sessions',
+      'remote',
+      'remote.commands',
+    ],
     apply(ctx) {
       const registry = createTermsRegistry(createTermsRequest(ctx.remote.commands));
       const ui = createUiPrimitives(React, resources.errorCodes);
@@ -35,7 +43,7 @@ export function createClientPlugin({ React, resources, styles }) {
           const binding = ctx.sessions.binding(sessionId);
           if (!binding) return;
           try {
-            ctx.uiConversation.input.for(binding.ctx).focus();
+            ctx.conversation.input.for(binding.ctx).focus();
           } catch {
             /* Successful insertion must not become an error if focus is unavailable. */
           }

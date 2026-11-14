@@ -1,13 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { matchTerms, renderTerm, SOURCE_KIND, LOOKUP_TOOL } from './terms.mjs';
 
-// Version-bound admission integration, verified against DSH 0.2.2-rc.1.
-// Context callbacks are not a general final-admission extension contract.
+// Version-bound admission integration, verified against DSH 0.2.2-rc.3.
+// There is no public final-admission event. agent.inject() queues a later step
+// and cannot repair the current request after route preparation or retry.
+// Keep the refresh probe isolated: context callbacks are not a general
+// final-admission extension contract.
 export function installContextGate(agent, getTerms) {
   const disposers = [];
   const state = { active: false, turn: undefined, matchedIds: new Set(), appended: 0, checks: 0 };
   let stepTerms = [];
   let stepSignal;
+  let disposed = false;
+  const assemblyContexts = new WeakSet();
   const pending = new Map();
   const makeMessage = (term) => ({
     id: randomUUID(),
@@ -55,6 +60,7 @@ export function installContextGate(agent, getTerms) {
   };
   disposers.push(
     agent.ctx.on('agent/pre-step', async (input, next) => {
+      if (disposed) return next();
       if (state.turn !== input.turn) {
         state.turn = input.turn;
         state.matchedIds.clear();
@@ -65,7 +71,7 @@ export function installContextGate(agent, getTerms) {
         for (const term of matchTerms(text, getTerms())) state.matchedIds.add(term.id);
       }
       const decision = await next();
-      if (decision.kind !== 'enter') return decision;
+      if (disposed || decision.kind !== 'enter') return decision;
       stepSignal = input.signal;
       stepTerms = getTerms()
         .filter((term) => state.matchedIds.has(term.id))
@@ -98,15 +104,27 @@ export function installContextGate(agent, getTerms) {
     }),
   );
   disposers.push(
+    // assemble() resolves variables before context providers; refreshContext()
+    // reuses accepted variables and does not call them. Mark the actual object
+    // so previews remain read-only even when they reuse the active signal.
+    agent.ctx.systemPrompt.variable('session_terms_assembly_guard', (context) => {
+      assemblyContexts.add(context);
+      return undefined;
+    }),
+  );
+  disposers.push(
     agent.ctx.systemPrompt.context({
       name: 'session-terms:admission-probe',
       order: 22000,
       required: true,
       interpolate: false,
       text(context) {
-        // Current runtime refresh has the accepted turn signal and no toolSet.
-        // Refuse ordinary assembly/preview calls, which are not admission.
+        // rc.3 refresh has the accepted signal, no toolSet, and a fresh context
+        // object. This is version-bound and does not make arbitrary direct
+        // refreshContext() calls or later providers into safe admission hooks.
         if (
+          disposed ||
+          assemblyContexts.has(context) ||
           !state.active ||
           context.signal !== stepSignal ||
           context.signal?.aborted ||
@@ -131,7 +149,13 @@ export function installContextGate(agent, getTerms) {
   return {
     state,
     dispose: async () => {
-      for (const dispose of disposers.toReversed()) await dispose();
+      disposed = true;
+      state.active = false;
+      state.matchedIds.clear();
+      stepTerms = [];
+      stepSignal = undefined;
+      pending.clear();
+      for (const dispose of disposers.splice(0).toReversed()) await dispose();
     },
   };
 }

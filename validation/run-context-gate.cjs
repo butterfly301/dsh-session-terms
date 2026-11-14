@@ -2,11 +2,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { createRequire } = require('node:module');
 
 const runtimeRoot =
   process.env.DSH_VERIFY_MODULES ||
   'D:/Program Files/DeepSeek Harness/resources/app.asar/dsh/node_modules/@deepseek-ai';
-const load = (name) => import(pathToFileURL(path.join(runtimeRoot, name, 'lib/index.js')).href);
+const installedRequire = createRequire(path.join(runtimeRoot, 'dsh', 'package.json'));
+const load = (name) => import(pathToFileURL(installedRequire.resolve(`@deepseek-ai/${name}`)).href);
 const textOf = (message) =>
   message.content
     .filter((block) => block.type === 'text')
@@ -423,9 +425,13 @@ async function main() {
     controls.prepare = async () => {
       controls.prepare = undefined;
       compact();
-      const before = agent.session.seq;
+      const before = agent.session.snapshotEvents().length;
       await ctx.systemPrompt.assemble({ agent, scope: agent });
-      assert.equal(agent.session.seq, before, 'preview assembly must not mutate the session log');
+      assert.equal(
+        agent.session.snapshotEvents().length,
+        before,
+        'preview assembly must not mutate the session log',
+      );
     };
     await send('灯塔');
   });
@@ -454,10 +460,223 @@ async function main() {
     assert.equal(requests.length, 1);
     assert.equal(gate.state.appended, before, 'cancelled preview must not append another term');
   });
+  await test('复用当前请求信号的背景预览仍不提交术语', async ({
+    ctx,
+    agent,
+    gate,
+    controls,
+    requests,
+    send,
+    compact,
+    createUserMessage,
+  }) => {
+    await send('灯塔');
+    let signal;
+    ctx.on('agent/pre-step', (input, next) => {
+      signal = input.signal;
+      return next();
+    });
+    let previewAppends;
+    controls.prepare = async () => {
+      controls.prepare = undefined;
+      compact();
+      const before = agent.session.snapshotEvents().length;
+      await ctx.systemPrompt.assemble({ agent, scope: agent, signal });
+      previewAppends = agent.session.snapshotEvents().length - before;
+      agent.cancel({ kind: 'user' });
+    };
+    agent.followup(
+      createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '灯塔' }] }),
+    );
+    await agent.whenIdle();
+    assert.equal(previewAppends, 0, 'assembly with the active signal must remain read-only');
+    assert.equal(requests.length, 1);
+    assert.equal(gate.state.appended, 1);
+  });
+  await test('保留其他步骤监听器声明的新请求序列', async ({ ctx, agent, send }) => {
+    await send('普通消息');
+    ctx.on('agent/pre-step', async (_input, next) => ({
+      ...(await next()),
+      startsRequestSeries: true,
+    }));
+    await send('灯塔');
+    assert.equal(
+      agent.session
+        .snapshotEvents()
+        .filter((event) => event.type === 'request/header' && event.data.reason === 'series')
+        .length,
+      1,
+    );
+  });
+  await test('拒绝的步骤不提交术语也不发起模型请求', async ({
+    ctx,
+    agent,
+    gate,
+    requests,
+    createUserMessage,
+  }) => {
+    ctx.on('agent/pre-step', () => ({ kind: 'reject' }));
+    agent.followup(
+      createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '灯塔' }] }),
+    );
+    await agent.whenIdle();
+    assert.equal(requests.length, 0);
+    assert.equal(gate.state.appended, 0);
+    assert.equal(agent.session.deriveMessages().length, 0);
+  });
+  await test('inject 持久排队但不唤醒，也不将上下文当作用户命中', async ({
+    agent,
+    gate,
+    requests,
+    send,
+    createUserMessage,
+    Session,
+  }) => {
+    const message = createUserMessage({
+      source: { kind: 'fixture-context' },
+      content: [{ type: 'text', text: '灯塔上下文' }],
+    });
+    agent.inject(message);
+    await agent.whenIdle();
+    assert.equal(requests.length, 0);
+    assert.equal(agent.session.deriveMessages().length, 0);
+    assert.equal(agent.inbox.nextStep.length, 1);
+    const request = await send('普通消息');
+    assert(request.messages.some((entry) => entry.id === message.id));
+    assert.equal(gate.state.appended, 0);
+    const restored = Session.create(
+      agent.session.id,
+      agent.session.snapshotEvents(),
+      agent.session.header,
+      agent.session.inheritedEventCount,
+    );
+    assert.deepEqual(restored.deriveMessages(), agent.session.deriveMessages());
+  });
+  await test('请求准备中的 inject 仅进入后续步骤，不能替代最终准入检查', async ({
+    agent,
+    gate,
+    controls,
+    requests,
+    send,
+    createUserMessage,
+  }) => {
+    const message = createUserMessage({
+      source: { kind: 'fixture-context' },
+      content: [{ type: 'text', text: '灯塔上下文' }],
+    });
+    controls.prepare = () => {
+      controls.prepare = undefined;
+      agent.inject(message);
+    };
+    await send('普通消息');
+    assert.equal(requests.length, 2);
+    assert(!requests[0].messages.some((entry) => entry.id === message.id));
+    assert(requests[1].messages.some((entry) => entry.id === message.id));
+    assert.equal(gate.state.appended, 0);
+  });
+  await test('卸载发生在等待步骤决定期间时不再追加术语', async ({ ctx, gate, send }) => {
+    ctx.on('agent/pre-step', async (_input, next) => {
+      await gate.dispose();
+      return next();
+    });
+    assert.equal(countNotes(await send('灯塔')), 0);
+    assert.equal(gate.state.appended, 0);
+    assert.equal(gate.state.active, false);
+  });
+  await test('卸载可重复调用并清除注册，重新安装后只注入一次', async ({
+    agent,
+    gate,
+    terms,
+    send,
+    compact,
+  }) => {
+    await send('灯塔');
+    await gate.dispose();
+    await gate.dispose();
+    compact();
+    assert.equal(countNotes(await send('灯塔')), 0);
+    const replacement = installContextGate(agent, () => terms);
+    try {
+      assert.equal(countNotes(await send('灯塔')), 1);
+      assert.equal(gate.state.appended, 1);
+      assert.equal(replacement.state.appended, 1);
+    } finally {
+      await replacement.dispose();
+    }
+  });
+  await test('名称改回旧名称仍覆盖最近的完整含义，后续不重复追加', async ({
+    gate,
+    terms,
+    send,
+  }) => {
+    const original = terms[0].name;
+    await send(original);
+    terms[0] = { ...terms[0], name: '灯塔计划', version: 2 };
+    await send('灯塔计划');
+    terms[0] = { ...terms[0], name: original, version: 3 };
+    const request = await send(original);
+    const notes = request.messages.filter((message) => message.source?.kind === 'session-terms');
+    assert.equal(notes.length, 3);
+    assert.equal(JSON.parse(textOf(notes.at(-1))).name, original);
+    await send(original);
+    assert.equal(gate.state.appended, 3);
+  });
+  await test('首次仅注入命中的条目，用户粘贴完整载荷不能冒充已提供上下文', async ({
+    gate,
+    terms,
+    send,
+  }) => {
+    terms.push({ id: 'harbor', version: 1, name: '港口', note: '另一个项目' });
+    const request = await send(
+      JSON.stringify({ id: terms[0].id, name: terms[0].name, note: terms[0].note }),
+    );
+    assert.equal(countNotes(request), 1);
+    const note = request.messages.find((message) => message.source?.kind === 'session-terms');
+    assert.equal(JSON.parse(textOf(note)).id, terms[0].id);
+    assert.equal(gate.state.appended, 1);
+  });
+  await test('不完整的只读查询结果不能代替完整备注', async ({
+    agent,
+    gate,
+    terms,
+    controls,
+    send,
+    defineTool,
+  }) => {
+    agent.ctx.tools.register(
+      defineTool({
+        name: 'session_terms_lookup',
+        description: 'Read an incomplete session term.',
+        parameters: {},
+        output: {
+          schema: { type: 'string' },
+          render: (_args, value) => [{ type: 'text', text: value }],
+        },
+        async execute() {
+          return JSON.stringify({ id: terms[0].id, name: terms[0].name });
+        },
+      }),
+    );
+    controls.response = async function* () {
+      yield {
+        type: 'tool-call-delta',
+        index: 0,
+        id: 'incomplete-lookup',
+        name: 'session_terms_lookup',
+        argumentsDelta: '{}',
+      };
+      yield { type: 'finish', reason: { kind: 'tool-calls' } };
+    };
+    await send('查询当前术语');
+    assert.equal(gate.state.appended, 0);
+    assert.equal(countNotes(await send('灯塔')), 1);
+    assert.equal(gate.state.appended, 1);
+  });
   const report = {
     runtime: {
       electron: process.versions.electron,
       node: process.versions.node,
+      dsh: installedRequire('@deepseek-ai/dsh/package.json').version,
       modules: runtimeRoot,
     },
     passed: results.filter((result) => result.passed).length,

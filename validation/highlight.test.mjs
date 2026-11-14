@@ -215,11 +215,11 @@ test('term reorder and note-only changes preserve existing highlight objects and
 test('detached source cleanup survives marker and class removal before observer delivery', async (t) => {
   for (const streaming of [false, true]) {
     const html = streaming
-      ? '<section data-chat-flow-kind="assistant-step"><div class="xMeOpW_body"><div class="_markdown_rve47_5"><p>API</p></div></div></section>'
+      ? '<section data-chat-flow-kind="assistant-step"><div class="xMeOpW_body"><div class="_markdown_13jw0_5"><p>API</p></div></div></section>'
       : assistant('<p>API</p>');
     const f = fixture(t, html);
     f.mount().setTerms([term('api', 'API')]);
-    const owner = f.root.querySelector('[data-text-interaction-source], ._markdown_rve47_5');
+    const owner = f.root.querySelector('[data-text-interaction-source], ._markdown_13jw0_5');
     assert.equal(painted(f.registry).length, 1);
     f.root.firstElementChild.remove();
     owner.removeAttribute('data-text-interaction-source');
@@ -432,18 +432,48 @@ test('user source is only the host plain text run, excluding JSON and reference 
       assert.ok(range.startContainer.parentElement.closest('._plainRun_fbulu_6'));
 });
 
-test('streaming assistant Markdown uses the pinned direct body structure without source markers', (t) => {
-  const f = fixture(
-    t,
-    `<section data-chat-flow-kind="assistant-step">
-    <div class="xMeOpW_body"><div class="_markdown_rve47_5"><p>API API</p></div></div>
-    <div class="_markdown_rve47_5">API</div>
-    <div class="xMeOpW_body"><div><div class="_markdown_rve47_5">API</div></div></div>
-  </section>`,
-  );
-  assert.equal(f.root.querySelector('[data-text-interaction-source]'), null);
-  f.mount().setTerms([term('api', 'API')]);
-  assert.deepEqual(painted(f.registry), ['API', 'API']);
+test('streaming Markdown accepts CSS-module hash changes only in the direct assistant body', async (t) => {
+  for (const token of ['_markdown_rve47_5', '_markdown_13jw0_5', '_markdown_future_99']) {
+    const f = fixture(
+      t,
+      `<section data-chat-flow-kind="assistant-step">
+      <div class="xMeOpW_body"><div class="${token}"><p>API</p></div></div>
+      <div class="xMeOpW_body"><div class="extra ${token} another"><p>API</p></div></div>
+      <div class="${token}">API</div>
+      <div class="other_body"><div class="${token}">API</div></div>
+      <div class="xMeOpW_body"><div><div class="${token}">API</div></div></div>
+      <div class="xMeOpW_body"><div class="prefix${token}">API</div></div>
+      <div class="xMeOpW_body"><div class="_markdownish_13jw0_5">API</div></div>
+      <div data-variant="think"><div class="xMeOpW_body"><div class="${token}">API</div></div></div>
+      <section data-chat-flow-kind="tool"><div class="xMeOpW_body"><div class="${token}">API</div></div></section>
+    </section>
+    <section data-chat-flow-kind="reasoning"><div class="xMeOpW_body"><div class="${token}">API</div></div></section>
+    <div class="xMeOpW_body"><div class="${token}">API</div></div>
+    <aside data-conversation-region="chat"><section data-chat-flow-kind="assistant-step">
+      <div class="xMeOpW_body"><div class="${token}">API</div></div>
+    </section></aside>`,
+    );
+    assert.equal(f.root.querySelector('[data-text-interaction-source]'), null);
+    f.mount().setTerms([term('api', 'API')]);
+    assert.deepEqual(painted(f.registry), ['API', 'API']);
+    const streaming = f.root.firstElementChild.firstElementChild.firstElementChild;
+    streaming.setAttribute('data-text-interaction-source', '');
+    await f.settle();
+    assert.deepEqual(
+      painted(f.registry),
+      ['API', 'API'],
+      'settlement must not double-register ranges',
+    );
+    streaming.className = '_markdown_next_100';
+    streaming.removeAttribute('data-text-interaction-source');
+    streaming.querySelector('p').textContent = 'API API';
+    await f.settle();
+    assert.deepEqual(
+      painted(f.registry),
+      ['API', 'API', 'API'],
+      'hash changes retain streaming updates',
+    );
+  }
 });
 
 test('real observer refreshes character data, replaced nodes, and hidden rerenders', async (t) => {

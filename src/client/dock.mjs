@@ -258,7 +258,7 @@ export function createDock({ React, useTerms, ui, TermEditor, Manager, focusInpu
               ),
             )
           : null,
-        expanded && state.error
+        state.error && (expanded || data)
           ? h(
               'div',
               { className: 'st-notice' },
@@ -331,9 +331,7 @@ export function createDock({ React, useTerms, ui, TermEditor, Manager, focusInpu
     const enabled = useSession(
       (session) =>
         !session.removed &&
-        (session.subagent === null ||
-          (session.subagent.address.mode === 'continuable' &&
-            session.subagent.parentAvailable === true)),
+        (session.subagent === null || session.subagent.address.mode === 'continuable'),
     );
     useEffect(() => {
       if (!enabled) dismiss();
