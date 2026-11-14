@@ -17,6 +17,7 @@
     "/index.js",
     "/client.js",
     "src/terms.mjs",
+    "src/matching.mjs",
     "src/context.mjs",
     "src/i18n.mjs",
     "cordis.patch.yml",

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { findTermOccurrences } from './matching.mjs';
 
 export const DOMAIN_NAME = 'session_terms';
 export const LOOKUP_TOOL = 'session_terms_lookup';
@@ -13,33 +14,7 @@ export function renderTerm(term) {
 }
 
 export function matchTerms(text, terms) {
-  const candidates = [];
-  for (const term of terms) {
-    if (!term.name) continue;
-    let start = text.indexOf(term.name);
-    while (start !== -1) {
-      const end = start + term.name.length;
-      const english = /^[A-Za-z0-9_]+$/.test(term.name);
-      const inWord =
-        english &&
-        (/[A-Za-z0-9_]/.test(text[start - 1] || '') || /[A-Za-z0-9_]/.test(text[end] || ''));
-      if (!inWord) candidates.push({ term, start, end });
-      start = text.indexOf(term.name, start + 1);
-    }
-  }
-  candidates.sort(
-    (a, b) =>
-      b.end - b.start - (a.end - a.start) ||
-      a.start - b.start ||
-      a.term.id.localeCompare(b.term.id),
-  );
-  const selected = [],
-    ids = new Set();
-  for (const candidate of candidates) {
-    if (selected.some((hit) => candidate.start < hit.end && hit.start < candidate.end)) continue;
-    selected.push(candidate);
-    ids.add(candidate.term.id);
-  }
+  const ids = new Set(findTermOccurrences(text, terms).map((hit) => hit.term.id));
   return terms.filter((term) => ids.has(term.id));
 }
 
@@ -58,6 +33,12 @@ function nameOf(value) {
 function noteOf(value) {
   if (typeof value !== 'string') throw new TermsError('invalid-note');
   return value;
+}
+function colorOf(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value) || value.length !== 7)
+    throw new TermsError('invalid-color');
+  return value.toLowerCase();
 }
 function checkDuplicate(state, name, except) {
   if (state.terms.some((term) => term.id !== except && term.name === name))
@@ -84,9 +65,17 @@ export function changeState(current, action, payload = {}) {
   switch (action) {
     case 'create': {
       const name = nameOf(payload.name),
-        note = noteOf(payload.note ?? '');
+        note = noteOf(payload.note ?? ''),
+        color = colorOf(payload.color);
       checkDuplicate(state, name);
-      state.terms.push({ id: randomUUID(), name, note, version: 1, order: state.terms.length });
+      state.terms.push({
+        id: randomUUID(),
+        name,
+        note,
+        color,
+        version: 1,
+        order: state.terms.length,
+      });
       break;
     }
     case 'update': {
@@ -94,11 +83,14 @@ export function changeState(current, action, payload = {}) {
       if (payload.expectedVersion !== undefined && payload.expectedVersion !== term.version)
         throw new TermsError('conflict');
       const name = nameOf(payload.name),
-        note = noteOf(payload.note);
+        note = noteOf(payload.note),
+        color = payload.color === undefined ? (term.color ?? null) : colorOf(payload.color);
       checkDuplicate(state, name, term.id);
-      if (term.name === name && term.note === note) return current;
+      if (term.name === name && term.note === note && (term.color ?? null) === color)
+        return current;
       term.name = name;
       term.note = note;
+      if (payload.color !== undefined) term.color = color;
       term.version++;
       break;
     }
@@ -132,7 +124,8 @@ export function changeState(current, action, payload = {}) {
       )
         throw new TermsError('invalid-restore');
       const name = nameOf(input.name),
-        note = noteOf(input.note);
+        note = noteOf(input.note),
+        color = colorOf(input.color);
       checkDuplicate(state, name);
       if (state.terms.some((term) => term.id === input.id)) throw new TermsError('duplicate-id');
       const index = Number.isSafeInteger(payload.index)
@@ -142,6 +135,7 @@ export function changeState(current, action, payload = {}) {
         id: input.id,
         name,
         note,
+        ...(input.color === undefined ? {} : { color }),
         version: input.version,
         order: index,
       });

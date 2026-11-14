@@ -6,7 +6,7 @@
       return false;
     const ids = /* @__PURE__ */ new Set(), names = /* @__PURE__ */ new Set();
     return state.terms.every((term) => {
-      if (!term || typeof term.id !== "string" || !term.id || typeof term.name !== "string" || !term.name.trim() || term.name !== term.name.trim() || typeof term.note !== "string" || !Number.isSafeInteger(term.version) || term.version < 1 || !Number.isSafeInteger(term.order) || term.order < 0 || ids.has(term.id) || names.has(term.name))
+      if (!term || typeof term.id !== "string" || !term.id || typeof term.name !== "string" || !term.name.trim() || term.name !== term.name.trim() || typeof term.note !== "string" || term.color != null && (typeof term.color !== "string" || term.color.length !== 7 || !/^#[0-9a-f]{6}$/i.test(term.color)) || !Number.isSafeInteger(term.version) || term.version < 1 || !Number.isSafeInteger(term.order) || term.order < 0 || ids.has(term.id) || names.has(term.name))
         return false;
       ids.add(term.id);
       names.add(term.name);
@@ -403,6 +403,7 @@
       const [state, store] = useTerms(sessionId);
       const [name, setName] = useState(term?.name ?? initialName);
       const [note, setNote] = useState(term?.note ?? "");
+      const [color, setColor] = useState(term?.color ?? null);
       const [entry, setEntry] = useState(() => term ? { ...term } : null);
       const [notice, setNotice] = useState(false);
       const [invalid, setInvalid] = useState(false);
@@ -424,6 +425,7 @@
           setEntry({ ...current });
           setName(current.name);
           setNote(current.note);
+          setColor(current.color ?? null);
         } else {
           setEntry(null);
         }
@@ -452,12 +454,13 @@
           setEntry({ ...duplicate });
           setName(duplicate.name);
           setNote(duplicate.note);
+          setColor(duplicate.color ?? null);
           setNotice(true);
           setInvalid(false);
           noteRef.current?.focus();
           return;
         }
-        const payload = entry ? { id: entry.id, expectedVersion: entry.version, name: clean, note } : { name: clean, note };
+        const payload = entry ? { id: entry.id, expectedVersion: entry.version, name: clean, note, color } : { name: clean, note, color };
         if (await store.mutate(entry ? "update" : "create", payload)) onClose();
       }
       return h(
@@ -499,6 +502,31 @@
                 onChange: (event) => setNote(event.target.value),
                 disabled: state.busy
               })
+            ),
+            h(
+              "div",
+              { className: "st-color-row" },
+              h(
+                "label",
+                { className: "st-color-label" },
+                t("color"),
+                h("input", {
+                  type: "color",
+                  className: "st-color-input",
+                  value: color ?? "#c05a42",
+                  onChange: (event) => setColor(event.target.value),
+                  disabled: busy
+                })
+              ),
+              button(t("defaultColor"), () => setColor(null), {
+                disabled: busy,
+                "aria-pressed": color === null
+              }),
+              h(
+                "span",
+                { className: "st-color-preview", style: { color: color ?? void 0 } },
+                name.trim() || t("colorPreview")
+              )
             ),
             notice ? h("p", { role: "status" }, t("duplicate")) : null,
             missing || conflict ? h(
@@ -773,7 +801,11 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
           h(
             "div",
             { className: "st-row-main" },
-            h("div", { className: "st-row-name" }, term.name),
+            h(
+              "div",
+              { className: "st-row-name", style: { color: term.color ?? void 0 } },
+              term.name
+            ),
             h("div", { className: "st-row-note" }, term.note || t("noNote"))
           ),
           selecting ? null : h(
@@ -884,6 +916,300 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
     };
   }
 
+  // src/matching.mjs
+  function findTermOccurrences(text, terms) {
+    const candidates = [];
+    for (const term of terms) {
+      if (!term.name) continue;
+      const english = /^[A-Za-z0-9_]+$/.test(term.name);
+      let start = text.indexOf(term.name);
+      while (start !== -1) {
+        const end = start + term.name.length;
+        const inWord = english && (/[A-Za-z0-9_]/.test(text[start - 1] || "") || /[A-Za-z0-9_]/.test(text[end] || ""));
+        if (!inWord) candidates.push({ term, start, end });
+        start = text.indexOf(term.name, start + 1);
+      }
+    }
+    candidates.sort(
+      (a, b) => b.end - b.start - (a.end - a.start) || a.start - b.start || a.term.id.localeCompare(b.term.id)
+    );
+    const selected = [];
+    for (const candidate of candidates) {
+      if (selected.some((hit) => candidate.start < hit.end && hit.start < candidate.end)) continue;
+      selected.push(candidate);
+    }
+    return selected.sort((a, b) => a.start - b.start);
+  }
+
+  // src/client/highlight.mjs
+  var CHAT = '[data-conversation-region="chat"]';
+  var FLOW = "[data-chat-flow-kind]";
+  var STREAM_BODY = ".xMeOpW_body > ._markdown_rve47_5";
+  var USER_TEXT = "[data-message-bubble] ._plainRun_fbulu_6";
+  var SOURCES = `${USER_TEXT}, [data-text-interaction-source], ${STREAM_BODY}`;
+  var EXCLUDED = [
+    "pre",
+    ".md-code-block",
+    "[data-code-block-content]",
+    "[data-code-block-banner]",
+    '[role="textbox"]',
+    "button",
+    "input",
+    "textarea",
+    "select",
+    "script",
+    "style",
+    '[contenteditable="true"]',
+    "[data-composer-seat]",
+    '[data-conversation-region="composer"]',
+    "[data-text-interaction-exclude]",
+    "[data-text-interaction-surface]",
+    '[data-variant="think"]',
+    "[hidden]",
+    "[inert]",
+    '[aria-hidden="true"]',
+    ".st-root"
+  ].join(",");
+  var BLOCKS = /* @__PURE__ */ new Set([
+    "P",
+    "DIV",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "LI",
+    "UL",
+    "OL",
+    "BLOCKQUOTE",
+    "TABLE",
+    "THEAD",
+    "TBODY",
+    "TR",
+    "TD",
+    "TH",
+    "BR",
+    "HR"
+  ]);
+  var nextLayer = 0;
+  function isSource(element, root) {
+    if (element.closest(CHAT) !== root || element.closest(EXCLUDED)) return false;
+    const flow = element.closest(FLOW);
+    const kind = flow?.getAttribute("data-chat-flow-kind");
+    if (element.closest("[data-message-bubble]"))
+      return element.matches(USER_TEXT) && (kind === "user" || kind === "steering");
+    return kind === "assistant-step";
+  }
+  function textGroups(source) {
+    const groups = [];
+    let group = { text: "", nodes: [] };
+    const flush = () => {
+      if (group.text) groups.push(group);
+      group = { text: "", nodes: [] };
+    };
+    function visit(node) {
+      if (node.nodeType === 3) {
+        const text = node.nodeValue ?? "";
+        if (text) {
+          group.nodes.push({ node, start: group.text.length, end: group.text.length + text.length });
+          group.text += text;
+        }
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      if (node !== source && (node.matches(EXCLUDED) || node.matches(CHAT) || node.matches(FLOW))) {
+        flush();
+        return;
+      }
+      const block = node !== source && BLOCKS.has(node.tagName);
+      if (block) flush();
+      for (const child of node.childNodes) visit(child);
+      if (block) flush();
+    }
+    visit(source);
+    flush();
+    return groups;
+  }
+  function rangesForTerms(source, terms) {
+    const colored = [];
+    for (const group of textGroups(source)) {
+      for (const hit of findTermOccurrences(group.text, terms)) {
+        const color = hit.term.color;
+        if (typeof color !== "string" || color.length !== 7 || !/^#[0-9a-f]{6}$/i.test(color))
+          continue;
+        const first = group.nodes.find((part) => part.end > hit.start);
+        const last = group.nodes.find((part) => part.end >= hit.end);
+        if (!first || !last) continue;
+        const range = source.ownerDocument.createRange();
+        range.setStart(first.node, hit.start - first.start);
+        range.setEnd(last.node, hit.end - last.start);
+        colored.push({ color: color.toLowerCase(), range });
+      }
+    }
+    return colored;
+  }
+  function createTermHighlighter(root, options = {}) {
+    const doc = root?.ownerDocument;
+    const view = doc?.defaultView;
+    const registry = options.registry ?? view?.CSS?.highlights;
+    const HighlightType = options.Highlight ?? view?.Highlight;
+    const Observer = options.MutationObserver ?? view?.MutationObserver;
+    const schedule = options.setTimeout ?? view?.setTimeout.bind(view);
+    const cancel = options.clearTimeout ?? view?.clearTimeout.bind(view);
+    const supported = Boolean(root && registry && HighlightType && Observer);
+    if (!supported) return { supported: false, setTerms() {
+    }, refresh() {
+    }, dispose() {
+    } };
+    const prefix = `session-terms-${++nextLayer}-`;
+    const keys = /* @__PURE__ */ new Set();
+    const style = doc.createElement("style");
+    style.dataset.sessionTermsHighlights = prefix;
+    doc.head.append(style);
+    let terms = [], signature = "", disposed = false, timer = null;
+    let cache = /* @__PURE__ */ new Map();
+    const dirty = /* @__PURE__ */ new Set();
+    const clear = () => {
+      for (const key of keys) registry.delete(key);
+      keys.clear();
+      style.textContent = "";
+    };
+    function refresh() {
+      if (disposed) return;
+      if (timer !== null) cancel(timer);
+      timer = null;
+      const byColor = /* @__PURE__ */ new Map();
+      const nextCache = /* @__PURE__ */ new Map();
+      if (terms.some((term) => term.color)) {
+        for (const source of root.querySelectorAll(SOURCES)) {
+          if (!isSource(source, root)) continue;
+          if (source.parentElement?.closest(SOURCES) && isSource(source.parentElement.closest(SOURCES), root))
+            continue;
+          const previous = cache.get(source);
+          const ranges = previous && !dirty.has(source) ? previous : rangesForTerms(source, terms);
+          nextCache.set(source, ranges);
+          for (const { color, range } of ranges) {
+            if (!byColor.has(color)) byColor.set(color, []);
+            byColor.get(color).push(range);
+          }
+        }
+      }
+      cache = nextCache;
+      dirty.clear();
+      const rules = [];
+      const activeKeys = /* @__PURE__ */ new Set();
+      for (const [color, ranges] of byColor) {
+        const key = `${prefix}${color.slice(1)}`;
+        const highlight = new HighlightType();
+        for (const range of ranges) highlight.add(range);
+        highlight.priority = 10;
+        registry.set(key, highlight);
+        activeKeys.add(key);
+        rules.push(`::highlight(${key}) { color: ${color}; }`);
+      }
+      for (const key of keys) if (!activeKeys.has(key)) registry.delete(key);
+      keys.clear();
+      for (const key of activeKeys) keys.add(key);
+      const css = rules.join("\n");
+      if (style.textContent !== css) style.textContent = css;
+    }
+    function queueRefresh() {
+      if (disposed || timer !== null || !terms.some((term) => term.color)) return;
+      timer = schedule(refresh, 80);
+    }
+    function affectedSource(source) {
+      if (!source || !cache.has(source) && (!source.matches(SOURCES) || !isSource(source, root)))
+        return false;
+      dirty.add(source);
+      return true;
+    }
+    function affectedTree(node) {
+      if (node.nodeType !== 1) return false;
+      let affected = affectedSource(node);
+      for (const source of node.querySelectorAll(SOURCES))
+        affected = affectedSource(source) || affected;
+      return affected;
+    }
+    const observer = new Observer((mutations) => {
+      let changed = false;
+      for (const mutation of mutations) {
+        const element = mutation.target.nodeType === 1 ? mutation.target : mutation.target.parentElement;
+        if (!element || !root.contains(element)) continue;
+        if (mutation.type !== "attributes") {
+          const kind = element.closest(FLOW)?.getAttribute("data-chat-flow-kind");
+          if (element.closest(CHAT) !== root || element.closest(EXCLUDED) || kind && !["assistant-step", "user", "steering"].includes(kind))
+            continue;
+        }
+        let source = element.closest(SOURCES);
+        while (source && root.contains(source)) {
+          changed = affectedSource(source) || changed;
+          source = source.parentElement?.closest(SOURCES);
+        }
+        if (mutation.type === "attributes") {
+          for (const cached of cache.keys()) {
+            if (element.contains(cached)) {
+              dirty.add(cached);
+              changed = true;
+            }
+          }
+          changed = affectedTree(element) || changed;
+        } else if (mutation.type === "childList") {
+          for (const node of [...mutation.addedNodes, ...mutation.removedNodes])
+            changed = affectedTree(node) || changed;
+        }
+      }
+      if (changed) queueRefresh();
+    });
+    observer.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [
+        "class",
+        "hidden",
+        "inert",
+        "aria-hidden",
+        "contenteditable",
+        "role",
+        "data-text-interaction-source",
+        "data-text-interaction-exclude",
+        "data-variant",
+        "data-chat-flow-kind",
+        "data-conversation-region",
+        "data-message-bubble",
+        "data-composer-seat",
+        "data-text-interaction-surface",
+        "data-code-block-content",
+        "data-code-block-banner"
+      ]
+    });
+    return {
+      supported,
+      refresh,
+      setTerms(value) {
+        const next = JSON.stringify(value.map(({ id, name, color }) => [id, name, color ?? null]));
+        if (next === signature) return;
+        signature = next;
+        terms = value;
+        cache.clear();
+        refresh();
+      },
+      dispose() {
+        if (disposed) return;
+        disposed = true;
+        observer.disconnect();
+        if (timer !== null) cancel(timer);
+        timer = null;
+        cache.clear();
+        dirty.clear();
+        clear();
+        style.remove();
+      }
+    };
+  }
+
   // src/client/dock.mjs
   function createDock({ React, useTerms, ui, TermEditor, Manager, focusInput }) {
     const h = React.createElement;
@@ -918,6 +1244,7 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
             ref,
             type: "button",
             className: "st-chip",
+            style: { color: term.color ?? void 0 },
             disabled: busy,
             "aria-describedby": id,
             onPointerDown(event) {
@@ -983,6 +1310,21 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
       const [manager, setManager] = useState(false);
       const [contextTerm, setContextTerm] = useState(null);
       const data = state.data;
+      const anchorRef = useRef(null);
+      const highlighterRef = useRef(null);
+      useEffect(() => {
+        const region = anchorRef.current?.closest('[data-conversation-region="chat"]');
+        if (!region || region.getAttribute("data-conversation-session") !== sessionId) return;
+        const highlighter = createTermHighlighter(region);
+        highlighterRef.current = highlighter;
+        return () => {
+          highlighter.dispose();
+          highlighterRef.current = null;
+        };
+      }, [sessionId]);
+      useEffect(() => {
+        highlighterRef.current?.setTerms(data?.terms ?? []);
+      }, [data?.terms]);
       const busy = state.busy || state.loading;
       const expanded = data?.expanded ?? false;
       const searchId = useId();
@@ -1033,6 +1375,7 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
         h(
           "section",
           {
+            ref: anchorRef,
             className: "st-root",
             "data-expanded": expanded,
             "aria-label": t("terms"),
@@ -1274,10 +1617,10 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   }
 
   // session-terms:session-terms:locales
-  var session_terms_locales_default = { "dictionaries": { "en": { "terms": "Terms", "add": "Add", "manage": "Manage", "expand": "Expand terms", "collapse": "Collapse terms", "search": "Search terms and notes", "name": "Term", "note": "Note", "noNote": "No note", "managerEmpty": "You haven’t added any terms yet~", "noResults": "No matching terms", "edit": "Edit", "remove": "Delete", "multiSelect": "Select multiple", "exitMultiSelect": "Exit selection mode", "selectAll": "Select all", "deselectAll": "Deselect all", "selectTerm": "Select", "deselectTerm": "Deselect", "selected": "Selected:", "deleteSelected": "Delete selected terms", "deleteSelectedTitle": "Delete selected terms?", "deleteSelectedDetail": "The selected terms and their notes will be deleted. This cannot be undone.", "confirmDelete": "Confirm deletion", "editorConflict": "This term changed elsewhere. Your draft is kept. Load the latest content before editing again.", "editorMissing": "This term was deleted. Load the latest content to save your retained draft as a new term.", "reloadLatest": "Load latest content", "noRemainingSelection": "No selected terms remain.", "clear": "Clear term library", "clearTitle": "Clear this session’s term library?", "clearDetail": "All terms and notes will be deleted. This cannot be undone.", "cancel": "Cancel", "save": "Save", "close": "Close", "addTitle": "Add term", "editTitle": "Edit term", "manageTitle": "Session term library", "required": "Enter a term name", "duplicate": "Opened the existing term and kept its note", "deleted": "Term deleted", "undo": "Undo", "loading": "Loading terms", "retry": "Retry", "transport": "The term service is not connected", "failed": "The term operation failed", "invalid": "The term service returned invalid data", "insertFailed": "The term could not be inserted. Your draft is unchanged. Choose an insertion point and try again.", "quoteText": "Quote text", "pin": "Save as term", "selectionExpired": "The selection expired. Select the text again.", "drag": "Drag to reorder terms", "busy": "Saving", "total": "Total terms", "errors.invalid-name": "Enter a term name.", "errors.invalid-note": "The note must be text.", "errors.duplicate-name": "This name already exists. Edit the existing term.", "errors.missing-term": "This term was deleted. Refresh and try again.", "errors.conflict": "The term library changed in another window. Refresh and try again.", "errors.invalid-restore": "This term cannot be restored.", "errors.duplicate-id": "This term has already been restored.", "errors.invalid-selection": "Select one or more valid terms and try again.", "errors.invalid-order": "The term list changed. Refresh before reordering.", "errors.invalid-expanded": "The expanded state is invalid.", "errors.unknown-action": "This term operation is not supported.", "errors.invalid-session": "The session identifier is missing.", "errors.session-mismatch": "You cannot modify another session’s term library.", "errors.invalid-request": "The term request is invalid.", "errors.operation-failed": "The term operation failed. Try again." }, "zh": { "terms": "术语", "add": "新增", "manage": "管理", "expand": "展开术语", "collapse": "收起术语", "search": "搜索术语和备注", "name": "术语", "note": "备注", "noNote": "暂无备注", "managerEmpty": "您还没有添加术语哦~", "noResults": "没有匹配的术语", "edit": "编辑", "remove": "删除", "multiSelect": "多选", "exitMultiSelect": "退出多选", "selectAll": "全选", "deselectAll": "取消全选", "selectTerm": "选中", "deselectTerm": "取消选中", "selected": "已选", "deleteSelected": "删除所选术语", "deleteSelectedTitle": "删除所选术语？", "deleteSelectedDetail": "所选术语及备注将被删除，此操作无法撤销。", "confirmDelete": "确认删除", "editorConflict": "该术语已在其他位置修改，草稿已保留。请载入最新内容后重新编辑。", "editorMissing": "该术语已被删除。载入最新内容后，可将保留的草稿另存为新术语。", "reloadLatest": "载入最新内容", "noRemainingSelection": "所选术语均已不存在。", "clear": "清空术语库", "clearTitle": "清空当前会话的术语库？", "clearDetail": "全部术语和备注都将被删除，此操作无法撤销。", "cancel": "取消", "save": "保存", "close": "关闭", "addTitle": "新增术语", "editTitle": "编辑术语", "manageTitle": "会话术语库", "required": "请输入术语名称", "duplicate": "已打开同名术语，原备注已保留", "deleted": "术语已删除", "undo": "撤销", "loading": "正在读取术语", "retry": "重试", "transport": "术语服务尚未连接", "failed": "术语操作失败", "invalid": "术语服务返回了无效数据", "insertFailed": "未能插入术语，草稿已保留。请重新选择插入位置后重试。", "quoteText": "引用文本", "pin": "收录为术语", "selectionExpired": "选区已失效，请重新选择文字", "drag": "拖动调整术语顺序", "busy": "正在保存", "total": "术语总数", "errors.invalid-name": "请填写术语名称。", "errors.invalid-note": "备注必须是文字。", "errors.duplicate-name": "该名称已存在，请编辑原词条。", "errors.missing-term": "词条已被删除，请刷新后重试。", "errors.conflict": "术语库已在其他窗口更新，请刷新后重试。", "errors.invalid-restore": "无法恢复该词条。", "errors.duplicate-id": "词条已恢复。", "errors.invalid-selection": "请选择有效的术语后重试。", "errors.invalid-order": "词条列表已变化，请刷新后重新排序。", "errors.invalid-expanded": "展开状态无效。", "errors.unknown-action": "不支持的术语操作。", "errors.invalid-session": "缺少会话标识。", "errors.session-mismatch": "不能操作其他会话的术语库。", "errors.invalid-request": "术语请求格式无效。", "errors.operation-failed": "术语操作失败，请重试。" } }, "errorCodes": ["conflict", "duplicate-id", "duplicate-name", "invalid-expanded", "invalid-name", "invalid-note", "invalid-order", "invalid-request", "invalid-restore", "invalid-selection", "invalid-session", "missing-term", "operation-failed", "session-mismatch", "unknown-action"] };
+  var session_terms_locales_default = { "dictionaries": { "en": { "terms": "Terms", "add": "Add", "manage": "Manage", "expand": "Expand terms", "collapse": "Collapse terms", "search": "Search terms and notes", "name": "Term", "note": "Note", "color": "Text color", "defaultColor": "Default color", "colorPreview": "Preview", "noNote": "No note", "managerEmpty": "You haven’t added any terms yet~", "noResults": "No matching terms", "edit": "Edit", "remove": "Delete", "multiSelect": "Select multiple", "exitMultiSelect": "Exit selection mode", "selectAll": "Select all", "deselectAll": "Deselect all", "selectTerm": "Select", "deselectTerm": "Deselect", "selected": "Selected:", "deleteSelected": "Delete selected terms", "deleteSelectedTitle": "Delete selected terms?", "deleteSelectedDetail": "The selected terms and their notes will be deleted. This cannot be undone.", "confirmDelete": "Confirm deletion", "editorConflict": "This term changed elsewhere. Your draft is kept. Load the latest content before editing again.", "editorMissing": "This term was deleted. Load the latest content to save your retained draft as a new term.", "reloadLatest": "Load latest content", "noRemainingSelection": "No selected terms remain.", "clear": "Clear term library", "clearTitle": "Clear this session’s term library?", "clearDetail": "All terms and notes will be deleted. This cannot be undone.", "cancel": "Cancel", "save": "Save", "close": "Close", "addTitle": "Add term", "editTitle": "Edit term", "manageTitle": "Session term library", "required": "Enter a term name", "duplicate": "Opened the existing term and kept its note", "deleted": "Term deleted", "undo": "Undo", "loading": "Loading terms", "retry": "Retry", "transport": "The term service is not connected", "failed": "The term operation failed", "invalid": "The term service returned invalid data", "insertFailed": "The term could not be inserted. Your draft is unchanged. Choose an insertion point and try again.", "quoteText": "Quote text", "pin": "Save as term", "selectionExpired": "The selection expired. Select the text again.", "drag": "Drag to reorder terms", "busy": "Saving", "total": "Total terms", "errors.invalid-name": "Enter a term name.", "errors.invalid-note": "The note must be text.", "errors.invalid-color": "Choose a valid color.", "errors.duplicate-name": "This name already exists. Edit the existing term.", "errors.missing-term": "This term was deleted. Refresh and try again.", "errors.conflict": "The term library changed in another window. Refresh and try again.", "errors.invalid-restore": "This term cannot be restored.", "errors.duplicate-id": "This term has already been restored.", "errors.invalid-selection": "Select one or more valid terms and try again.", "errors.invalid-order": "The term list changed. Refresh before reordering.", "errors.invalid-expanded": "The expanded state is invalid.", "errors.unknown-action": "This term operation is not supported.", "errors.invalid-session": "The session identifier is missing.", "errors.session-mismatch": "You cannot modify another session’s term library.", "errors.invalid-request": "The term request is invalid.", "errors.operation-failed": "The term operation failed. Try again." }, "zh": { "terms": "术语", "add": "新增", "manage": "管理", "expand": "展开术语", "collapse": "收起术语", "search": "搜索术语和备注", "name": "术语", "note": "备注", "color": "文字颜色", "defaultColor": "默认颜色", "colorPreview": "预览", "noNote": "暂无备注", "managerEmpty": "您还没有添加术语哦~", "noResults": "没有匹配的术语", "edit": "编辑", "remove": "删除", "multiSelect": "多选", "exitMultiSelect": "退出多选", "selectAll": "全选", "deselectAll": "取消全选", "selectTerm": "选中", "deselectTerm": "取消选中", "selected": "已选", "deleteSelected": "删除所选术语", "deleteSelectedTitle": "删除所选术语？", "deleteSelectedDetail": "所选术语及备注将被删除，此操作无法撤销。", "confirmDelete": "确认删除", "editorConflict": "该术语已在其他位置修改，草稿已保留。请载入最新内容后重新编辑。", "editorMissing": "该术语已被删除。载入最新内容后，可将保留的草稿另存为新术语。", "reloadLatest": "载入最新内容", "noRemainingSelection": "所选术语均已不存在。", "clear": "清空术语库", "clearTitle": "清空当前会话的术语库？", "clearDetail": "全部术语和备注都将被删除，此操作无法撤销。", "cancel": "取消", "save": "保存", "close": "关闭", "addTitle": "新增术语", "editTitle": "编辑术语", "manageTitle": "会话术语库", "required": "请输入术语名称", "duplicate": "已打开同名术语，原备注已保留", "deleted": "术语已删除", "undo": "撤销", "loading": "正在读取术语", "retry": "重试", "transport": "术语服务尚未连接", "failed": "术语操作失败", "invalid": "术语服务返回了无效数据", "insertFailed": "未能插入术语，草稿已保留。请重新选择插入位置后重试。", "quoteText": "引用文本", "pin": "收录为术语", "selectionExpired": "选区已失效，请重新选择文字", "drag": "拖动调整术语顺序", "busy": "正在保存", "total": "术语总数", "errors.invalid-name": "请填写术语名称。", "errors.invalid-note": "备注必须是文字。", "errors.invalid-color": "请选择有效的颜色。", "errors.duplicate-name": "该名称已存在，请编辑原词条。", "errors.missing-term": "词条已被删除，请刷新后重试。", "errors.conflict": "术语库已在其他窗口更新，请刷新后重试。", "errors.invalid-restore": "无法恢复该词条。", "errors.duplicate-id": "词条已恢复。", "errors.invalid-selection": "请选择有效的术语后重试。", "errors.invalid-order": "词条列表已变化，请刷新后重新排序。", "errors.invalid-expanded": "展开状态无效。", "errors.unknown-action": "不支持的术语操作。", "errors.invalid-session": "缺少会话标识。", "errors.session-mismatch": "不能操作其他会话的术语库。", "errors.invalid-request": "术语请求格式无效。", "errors.operation-failed": "术语操作失败，请重试。" } }, "errorCodes": ["conflict", "duplicate-id", "duplicate-name", "invalid-color", "invalid-expanded", "invalid-name", "invalid-note", "invalid-order", "invalid-request", "invalid-restore", "invalid-selection", "invalid-session", "missing-term", "operation-failed", "session-mismatch", "unknown-action"] };
 
   // src/client/styles.css
-  var styles_default = ".st-root,\n.st-dialog,\n.st-tip,\n.st-pin {\n  font-family: var(--dsw-font-family, inherit);\n  font-size: 13px;\n  line-height: 1.5;\n  color: var(--dsw-alias-label-primary);\n}\n\n.st-root *,\n.st-dialog * {\n  box-sizing: border-box;\n}\n\n.st-root {\n  box-sizing: border-box;\n  width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px));\n  max-width: var(--dsh-composer-card-max-width, 748px);\n  margin: 0 auto;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 4px 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 10px;\n  overflow: hidden;\n}\n\n.st-root[data-expanded='true'] {\n  max-height: min(20vh, 160px);\n}\n\n.st-head {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex-shrink: 0;\n}\n\n.st-title {\n  font-weight: 600;\n  white-space: nowrap;\n}\n\n.st-count {\n  font-variant-numeric: tabular-nums;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-spacer {\n  flex: 1;\n}\n\n.st-collapsed {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  gap: 5px;\n  overflow-x: auto;\n  overflow-y: hidden;\n  white-space: nowrap;\n  max-height: 28px;\n  scrollbar-width: none;\n}\n\n.st-collapsed::-webkit-scrollbar {\n  display: none;\n}\n\n.st-grid {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 5px;\n  align-content: flex-start;\n  min-height: 0;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-root[data-expanded='true'] .st-grid {\n  flex: 1;\n}\n\n.st-chipwrap {\n  display: inline-flex;\n  flex-shrink: 0;\n  max-width: 100%;\n}\n\n.st-btn,\n.st-chip {\n  font: inherit;\n  color: inherit;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: pointer;\n  border-radius: 6px;\n  min-height: 28px;\n  padding: 3px 8px;\n  white-space: nowrap;\n}\n\n.st-btn:hover,\n.st-chip:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-chip {\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  background: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l2);\n}\n\n.st-btn:disabled,\n.st-chip:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-btn:focus-visible,\n.st-chip:focus-visible,\n.st-field:focus-visible,\n.st-tip:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 2px;\n}\n\n.st-primary {\n  background: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.st-primary:hover {\n  filter: brightness(0.95);\n  background: var(--dsw-alias-state-business-primary);\n}\n\n.st-danger {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-field {\n  font: inherit;\n  line-height: 1.5;\n  min-width: 0;\n  width: 100%;\n  padding: 7px 9px;\n  color: inherit;\n  background: var(--dsw-alias-bg-base);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 7px;\n}\n\n.st-search {\n  padding: 3px 8px;\n  flex-shrink: 0;\n}\n\n.st-muted {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-status {\n  margin: 0;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  flex: 1;\n}\n\n.st-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-sr {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n}\n\n.st-dialog {\n  box-sizing: border-box;\n  position: fixed;\n  inset: 0;\n  margin: auto;\n  padding: 0;\n  width: min(600px, calc(100vw - 40px));\n  height: fit-content;\n  max-height: calc(100dvh - 40px);\n  overflow: auto;\n  overscroll-behavior: contain;\n  z-index: 100;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 14px;\n  background: Canvas;\n  background-color: rgb(from var(--dsw-alias-bg-layer-1) r g b / 1);\n  opacity: 1;\n  backdrop-filter: none;\n}\n\n.st-dialog::backdrop {\n  background: transparent;\n  backdrop-filter: none;\n}\n\n.st-dialog-head {\n  position: sticky;\n  top: 0;\n  background: var(--dsw-alias-bg-layer-1);\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  padding: 14px 18px;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  z-index: 1;\n}\n\n.st-dialog h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  flex: 1;\n}\n\n.st-body {\n  padding: 16px 18px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.st-label {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-weight: 500;\n}\n\n.st-label textarea {\n  resize: vertical;\n  min-height: 130px;\n  white-space: pre-wrap;\n}\n\n.st-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.st-tools {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.st-tools .st-field {\n  flex: 1;\n  min-width: 150px;\n}\n\n.st-list {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 45vh;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  padding: 10px 0;\n}\n\n.st-row-main {\n  flex: 1;\n  min-width: 0;\n}\n\n.st-row-name {\n  font-weight: 600;\n  overflow-wrap: anywhere;\n}\n\n.st-row-note {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 4.5em;\n  overflow: hidden;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-row-actions {\n  display: flex;\n  gap: 2px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n}\n\n.st-tip {\n  box-sizing: border-box;\n  position: fixed;\n  inset: auto;\n  margin: 0;\n  width: min(360px, calc(100vw - 24px));\n  max-height: min(240px, 40vh);\n  overflow: auto;\n  overscroll-behavior: contain;\n  padding: 10px 12px;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n}\n\n.st-tip:not(:popover-open) {\n  display: none;\n}\n\n.st-notice {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  min-width: 0;\n}\n\n.st-pin {\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  padding: 4px;\n}\n\n.st-pin .st-btn {\n  min-height: 32px;\n}\n\n@media (pointer: coarse) {\n  .st-btn,\n  .st-chip {\n    min-height: 44px;\n  }\n\n  .st-collapsed {\n    max-height: 44px;\n  }\n\n  .st-field {\n    font-size: 16px;\n  }\n\n  .st-root[data-expanded='true'] {\n    gap: 2px;\n    padding-block: 2px;\n  }\n\n  .st-root[data-expanded='true'] .st-head .st-btn {\n    min-height: 28px;\n  }\n\n  .st-root[data-expanded='true'] .st-search {\n    padding-block: 2px;\n  }\n}\n\n@media (max-width: 480px) {\n  .st-row {\n    align-items: flex-start;\n    flex-wrap: wrap;\n  }\n\n  .st-row-actions {\n    width: 100%;\n    justify-content: flex-start;\n  }\n\n  .st-dialog-head,\n  .st-body {\n    padding: 12px;\n  }\n\n  .st-head {\n    gap: 2px;\n  }\n\n  .st-head .st-btn {\n    padding-inline: 5px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .st-root *,\n  .st-dialog * {\n    scroll-behavior: auto;\n  }\n}\n\n.st-icon-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  min-width: 28px;\n  padding: 0;\n  flex-shrink: 0;\n}\n\n.st-icon-btn svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-selection-actions {\n  display: flex;\n  align-items: center;\n  gap: 2px;\n  white-space: nowrap;\n  padding: 3px;\n  background: var(--dsw-alias-button-floating-fill);\n  border-radius: 999px;\n  box-shadow: var(--dsw-elevation-panel);\n  color: var(--dsw-alias-label-primary);\n  font: var(--dsw-font-xs-13);\n}\n\n.st-selection-actions .st-btn {\n  border-radius: 999px;\n  padding: 5px 10px;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible),\n.st-chip:hover,\n.st-chip:focus:not(:focus-visible) {\n  outline: none;\n  box-shadow: none;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible) {\n  border-color: transparent;\n}\n\n.st-dialog-wide {\n  width: min(860px, calc(100vw - 40px));\n  height: min(640px, calc(100dvh - 40px));\n  box-sizing: border-box;\n  overflow: hidden;\n}\n\n.st-dialog-wide:popover-open {\n  display: flex;\n  flex-direction: column;\n}\n\n.st-dialog-wide > .st-dialog-head {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide > .st-body {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.st-dialog-wide .st-tools {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide .st-list {\n  flex: 1;\n  min-height: 0;\n  max-height: none;\n  overflow: auto;\n  margin: 0;\n}\n\n.st-dialog-wide .st-list:empty {\n  display: none;\n}\n\n.st-manager-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin: 0;\n  text-align: center;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n  opacity: 0.55;\n}\n\n.st-drag-handle {\n  cursor: grab;\n  flex: 0 0 28px;\n  padding: 4px;\n  color: var(--dsw-alias-label-secondary);\n  align-self: center;\n}\n\n.st-drag-handle:active {\n  cursor: grabbing;\n}\n\n.st-drag-handle svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-dialog-wide::backdrop {\n  background: rgb(0 0 0 / 32%);\n}\n\n.st-icon-btn[aria-pressed='true'] {\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n.st-selection-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-shrink: 0;\n  margin-top: auto;\n  padding-top: 8px;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n}\n\n.st-selection-count {\n  margin-right: auto;\n  color: var(--dsw-alias-label-secondary);\n  font-variant-numeric: tabular-nums;\n}\n\n.st-select-control {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  flex: 0 0 28px;\n  align-self: center;\n  cursor: pointer;\n}\n\n.st-select-checkbox {\n  appearance: none;\n  width: 18px;\n  height: 18px;\n  margin: 0;\n  border: 1.5px solid var(--dsw-alias-label-secondary);\n  border-radius: 50%;\n  background: transparent;\n  cursor: pointer;\n}\n\n.st-select-checkbox:checked {\n  background: var(--dsw-alias-state-business-primary);\n  border-color: var(--dsw-alias-state-business-primary);\n}\n\n.st-select-checkbox:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-select-checkbox:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-select-control svg {\n  position: absolute;\n  pointer-events: none;\n  color: var(--dsw-alias-label-primary-foreground);\n  visibility: hidden;\n}\n\n.st-select-checkbox:checked + svg {\n  visibility: visible;\n}\n";
+  var styles_default = ".st-root,\n.st-dialog,\n.st-tip,\n.st-pin {\n  font-family: var(--dsw-font-family, inherit);\n  font-size: 13px;\n  line-height: 1.5;\n  color: var(--dsw-alias-label-primary);\n}\n\n.st-root *,\n.st-dialog * {\n  box-sizing: border-box;\n}\n\n.st-root {\n  box-sizing: border-box;\n  width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px));\n  max-width: var(--dsh-composer-card-max-width, 748px);\n  margin: 0 auto;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 4px 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 10px;\n  overflow: hidden;\n}\n\n.st-root[data-expanded='true'] {\n  max-height: min(20vh, 160px);\n}\n\n.st-head {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex-shrink: 0;\n}\n\n.st-title {\n  font-weight: 600;\n  white-space: nowrap;\n}\n\n.st-count {\n  font-variant-numeric: tabular-nums;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-spacer {\n  flex: 1;\n}\n\n.st-collapsed {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  gap: 5px;\n  overflow-x: auto;\n  overflow-y: hidden;\n  white-space: nowrap;\n  max-height: 28px;\n  scrollbar-width: none;\n}\n\n.st-collapsed::-webkit-scrollbar {\n  display: none;\n}\n\n.st-grid {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 5px;\n  align-content: flex-start;\n  min-height: 0;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-root[data-expanded='true'] .st-grid {\n  flex: 1;\n}\n\n.st-chipwrap {\n  display: inline-flex;\n  flex-shrink: 0;\n  max-width: 100%;\n}\n\n.st-btn,\n.st-chip {\n  font: inherit;\n  color: inherit;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: pointer;\n  border-radius: 6px;\n  min-height: 28px;\n  padding: 3px 8px;\n  white-space: nowrap;\n}\n\n.st-btn:hover,\n.st-chip:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-chip {\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  background: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l2);\n}\n\n.st-btn:disabled,\n.st-chip:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-btn:focus-visible,\n.st-chip:focus-visible,\n.st-field:focus-visible,\n.st-tip:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 2px;\n}\n\n.st-primary {\n  background: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.st-primary:hover {\n  filter: brightness(0.95);\n  background: var(--dsw-alias-state-business-primary);\n}\n\n.st-danger {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-field {\n  font: inherit;\n  line-height: 1.5;\n  min-width: 0;\n  width: 100%;\n  padding: 7px 9px;\n  color: inherit;\n  background: var(--dsw-alias-bg-base);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 7px;\n}\n\n.st-search {\n  padding: 3px 8px;\n  flex-shrink: 0;\n}\n\n.st-muted {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-status {\n  margin: 0;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  flex: 1;\n}\n\n.st-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-sr {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n}\n\n.st-dialog {\n  box-sizing: border-box;\n  position: fixed;\n  inset: 0;\n  margin: auto;\n  padding: 0;\n  width: min(600px, calc(100vw - 40px));\n  height: fit-content;\n  max-height: calc(100dvh - 40px);\n  overflow: auto;\n  overscroll-behavior: contain;\n  z-index: 100;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 14px;\n  background: Canvas;\n  background-color: rgb(from var(--dsw-alias-bg-layer-1) r g b / 1);\n  opacity: 1;\n  backdrop-filter: none;\n}\n\n.st-dialog::backdrop {\n  background: transparent;\n  backdrop-filter: none;\n}\n\n.st-dialog-head {\n  position: sticky;\n  top: 0;\n  background: var(--dsw-alias-bg-layer-1);\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  padding: 14px 18px;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  z-index: 1;\n}\n\n.st-dialog h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  flex: 1;\n}\n\n.st-body {\n  padding: 16px 18px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.st-label {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-weight: 500;\n}\n\n.st-label textarea {\n  resize: vertical;\n  min-height: 130px;\n  white-space: pre-wrap;\n}\n\n.st-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.st-tools {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.st-tools .st-field {\n  flex: 1;\n  min-width: 150px;\n}\n\n.st-list {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 45vh;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  padding: 10px 0;\n}\n\n.st-row-main {\n  flex: 1;\n  min-width: 0;\n}\n\n.st-row-name {\n  font-weight: 600;\n  overflow-wrap: anywhere;\n}\n\n.st-row-note {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 4.5em;\n  overflow: hidden;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-row-actions {\n  display: flex;\n  gap: 2px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n}\n\n.st-tip {\n  box-sizing: border-box;\n  position: fixed;\n  inset: auto;\n  margin: 0;\n  width: min(360px, calc(100vw - 24px));\n  max-height: min(240px, 40vh);\n  overflow: auto;\n  overscroll-behavior: contain;\n  padding: 10px 12px;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n}\n\n.st-tip:not(:popover-open) {\n  display: none;\n}\n\n.st-notice {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  min-width: 0;\n}\n\n.st-pin {\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  padding: 4px;\n}\n\n.st-pin .st-btn {\n  min-height: 32px;\n}\n\n@media (pointer: coarse) {\n  .st-btn,\n  .st-chip {\n    min-height: 44px;\n  }\n\n  .st-collapsed {\n    max-height: 44px;\n  }\n\n  .st-field {\n    font-size: 16px;\n  }\n\n  .st-root[data-expanded='true'] {\n    gap: 2px;\n    padding-block: 2px;\n  }\n\n  .st-root[data-expanded='true'] .st-head .st-btn {\n    min-height: 28px;\n  }\n\n  .st-root[data-expanded='true'] .st-search {\n    padding-block: 2px;\n  }\n}\n\n@media (max-width: 480px) {\n  .st-row {\n    align-items: flex-start;\n    flex-wrap: wrap;\n  }\n\n  .st-row-actions {\n    width: 100%;\n    justify-content: flex-start;\n  }\n\n  .st-dialog-head,\n  .st-body {\n    padding: 12px;\n  }\n\n  .st-head {\n    gap: 2px;\n  }\n\n  .st-head .st-btn {\n    padding-inline: 5px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .st-root *,\n  .st-dialog * {\n    scroll-behavior: auto;\n  }\n}\n\n.st-icon-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  min-width: 28px;\n  padding: 0;\n  flex-shrink: 0;\n}\n\n.st-icon-btn svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-selection-actions {\n  display: flex;\n  align-items: center;\n  gap: 2px;\n  white-space: nowrap;\n  padding: 3px;\n  background: var(--dsw-alias-button-floating-fill);\n  border-radius: 999px;\n  box-shadow: var(--dsw-elevation-panel);\n  color: var(--dsw-alias-label-primary);\n  font: var(--dsw-font-xs-13);\n}\n\n.st-selection-actions .st-btn {\n  border-radius: 999px;\n  padding: 5px 10px;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible),\n.st-chip:hover,\n.st-chip:focus:not(:focus-visible) {\n  outline: none;\n  box-shadow: none;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible) {\n  border-color: transparent;\n}\n\n.st-dialog-wide {\n  width: min(860px, calc(100vw - 40px));\n  height: min(640px, calc(100dvh - 40px));\n  box-sizing: border-box;\n  overflow: hidden;\n}\n\n.st-dialog-wide:popover-open {\n  display: flex;\n  flex-direction: column;\n}\n\n.st-dialog-wide > .st-dialog-head {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide > .st-body {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.st-dialog-wide .st-tools {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide .st-list {\n  flex: 1;\n  min-height: 0;\n  max-height: none;\n  overflow: auto;\n  margin: 0;\n}\n\n.st-dialog-wide .st-list:empty {\n  display: none;\n}\n\n.st-manager-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin: 0;\n  text-align: center;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n  opacity: 0.55;\n}\n\n.st-drag-handle {\n  cursor: grab;\n  flex: 0 0 28px;\n  padding: 4px;\n  color: var(--dsw-alias-label-secondary);\n  align-self: center;\n}\n\n.st-drag-handle:active {\n  cursor: grabbing;\n}\n\n.st-drag-handle svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-dialog-wide::backdrop {\n  background: rgb(0 0 0 / 32%);\n}\n\n.st-icon-btn[aria-pressed='true'] {\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n.st-selection-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-shrink: 0;\n  margin-top: auto;\n  padding-top: 8px;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n}\n\n.st-selection-count {\n  margin-right: auto;\n  color: var(--dsw-alias-label-secondary);\n  font-variant-numeric: tabular-nums;\n}\n\n.st-select-control {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  flex: 0 0 28px;\n  align-self: center;\n  cursor: pointer;\n}\n\n.st-select-checkbox {\n  appearance: none;\n  width: 18px;\n  height: 18px;\n  margin: 0;\n  border: 1.5px solid var(--dsw-alias-label-secondary);\n  border-radius: 50%;\n  background: transparent;\n  cursor: pointer;\n}\n\n.st-select-checkbox:checked {\n  background: var(--dsw-alias-state-business-primary);\n  border-color: var(--dsw-alias-state-business-primary);\n}\n\n.st-select-checkbox:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-select-checkbox:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-select-control svg {\n  position: absolute;\n  pointer-events: none;\n  color: var(--dsw-alias-label-primary-foreground);\n  visibility: hidden;\n}\n\n.st-select-checkbox:checked + svg {\n  visibility: visible;\n}\n\n.st-color-row {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 10px;\n  margin-top: 14px;\n}\n\n.st-color-label {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-color-input {\n  width: 36px;\n  height: 32px;\n  padding: 2px;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 6px;\n  background: var(--dsw-alias-interactive-bg-hover);\n  cursor: pointer;\n}\n\n.st-color-input:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-color-preview {\n  flex: 1 1 100px;\n  min-width: 0;\n  overflow-wrap: anywhere;\n}\n";
 
   // src/client.js
   window.__ModuleLoader__.load({

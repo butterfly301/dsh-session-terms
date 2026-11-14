@@ -12,6 +12,9 @@
     "search": "Search terms and notes",
     "name": "Term",
     "note": "Note",
+    "color": "Text color",
+    "defaultColor": "Default color",
+    "colorPreview": "Preview",
     "noNote": "No note",
     "managerEmpty": "You haven’t added any terms yet~",
     "noResults": "No matching terms",
@@ -61,6 +64,7 @@
   "errors": {
     "invalid-name": "Enter a term name.",
     "invalid-note": "The note must be text.",
+    "invalid-color": "Choose a valid color.",
     "duplicate-name": "This name already exists. Edit the existing term.",
     "missing-term": "This term was deleted. Refresh and try again.",
     "conflict": "The term library changed in another window. Refresh and try again.",

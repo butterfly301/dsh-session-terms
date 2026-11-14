@@ -96,6 +96,7 @@ test('TermsError accepts only a code and every existing domain failure keeps its
   const cases = [
     ['create', { name: '' }, 'invalid-name'],
     ['create', { name: 'two', note: 1 }, 'invalid-note'],
+    ['create', { name: 'two', color: 'red' }, 'invalid-color'],
     ['create', { name: 'one' }, 'duplicate-name'],
     ['delete', { id: 'gone' }, 'missing-term'],
     ['clear', { expectedRevision: -1 }, 'conflict'],
@@ -124,13 +125,21 @@ test('TermsError accepts only a code and every existing domain failure keeps its
 const zodDouble = `
 const schema = (validate = () => true) => ({
   parse(value) { if (!validate(value)) throw Error('schema validation details'); return value; },
-  min() { return this; }, int() { return this; }, positive() { return this; }, nonnegative() { return this; },
+  min(size) { return schema(value => validate(value) && value.length >= size); },
+  length(size) { return schema(value => validate(value) && value.length === size); },
+  regex(pattern) { return schema(value => validate(value) && pattern.test(value)); },
+  int() { return this; }, positive() { return this; }, nonnegative() { return this; },
   optional() { return schema(value => value === undefined || validate(value)); },
+  nullable() { return schema(value => value === null || validate(value)); },
   strict() { return this; },
 });
 export const z = {
-  string: () => schema(value => typeof value === 'string' && value.length > 0),
-  number: () => schema(), boolean: () => schema(), array: () => schema(), record: () => schema(), unknown: () => schema(),
+  string: () => schema(value => typeof value === 'string'),
+  number: () => schema(), boolean: () => schema(), record: () => schema(), unknown: () => schema(),
+  array: item => schema(value => {
+    if (!Array.isArray(value)) return false;
+    try { for (const entry of value) item.parse(entry); return true; } catch { return false; }
+  }),
   enum: values => schema(value => values.includes(value)),
   object: fields => schema(value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -144,7 +153,7 @@ async function openHost(root, defaultLocale) {
   await mkdir(join(root, 'src'));
   await mkdir(join(root, 'locale'));
   await copyFile(new URL('../index.js', import.meta.url), join(root, 'index.mjs'));
-  for (const name of ['terms.mjs', 'i18n.mjs'])
+  for (const name of ['terms.mjs', 'matching.mjs', 'i18n.mjs'])
     await copyFile(new URL(`../src/${name}`, import.meta.url), join(root, 'src', name));
   await json(join(root, 'locale'), 'config', { defaultLocale });
   for (const language of ['en', 'fr', 'es'])
@@ -232,6 +241,7 @@ async function openHost(root, defaultLocale) {
     tool,
     section,
     agent,
+    domain: host.termsDomain,
     setFailure(error) {
       failure = error;
     },
@@ -291,6 +301,66 @@ test('Host command accepts atomic multi-delete and enforces revision and session
       ['C'],
     );
     assert.equal(deleted.state.revision, before.revision + 1);
+  });
+});
+
+test('Host stored term schema accepts legacy and nullable hex colors and rejects injection', async () => {
+  await withFixture(async (root) => {
+    const { domain } = await openHost(root, 'en');
+    const schema = domain.tables.sessions;
+    const entry = { id: 'old', name: 'legacy', note: '', version: 1, order: 0 };
+    const state = (term) => ({ revision: 1, expanded: false, terms: [term] });
+    for (const term of [entry, { ...entry, color: null }, { ...entry, color: '#aB12Ef' }])
+      assert.deepEqual(schema.parse(state(term)), state(term));
+    for (const color of ['', 'red', '#abc', '#12345678', '#abcdef\n', '#abcdef; color:red', 1, {}])
+      assert.throws(() => schema.parse(state({ ...entry, color })));
+  });
+});
+
+test('Host color commands preserve AI lookup output and return code-only validation and CAS failures', async () => {
+  await withFixture(async (root) => {
+    const { command, tool, agent } = await openHost(root, 'en');
+    const request = async (action, payload) =>
+      JSON.parse(
+        (
+          await command.handler({
+            agent,
+            rawInput: JSON.stringify({ action, payload }),
+          })
+        ).text,
+      );
+    const created = await request('create', { name: 'colored', note: 'context', color: '#ABCDEF' });
+    assert.equal(created.ok, true);
+    const entry = created.state.terms[0];
+    assert.equal(entry.color, '#abcdef');
+    const originalAI = await tool.execute({}, {});
+    const updated = await request('update', { ...entry, color: '#123456', expectedVersion: 1 });
+    assert.equal(updated.ok, true);
+    assert.equal(updated.state.terms[0].version, 2);
+    assert.equal(await tool.execute({}, {}), originalAI);
+    assert.deepEqual(await request('update', { ...entry, color: null, expectedVersion: 1 }), {
+      ok: false,
+      code: 'conflict',
+    });
+    assert.deepEqual(
+      await request('create', { name: 'invalid', color: 'red; background:url(x)' }),
+      {
+        ok: false,
+        code: 'invalid-color',
+      },
+    );
+    assert.deepEqual(await request('update', { ...updated.state.terms[0], color: '#123456\n' }), {
+      ok: false,
+      code: 'invalid-color',
+    });
+    const reset = await request('update', {
+      ...updated.state.terms[0],
+      color: null,
+      expectedVersion: 2,
+    });
+    assert.equal(reset.state.terms[0].color, null);
+    assert.equal(reset.state.terms[0].version, 3);
+    assert.equal(await tool.execute({}, {}), originalAI);
   });
 });
 

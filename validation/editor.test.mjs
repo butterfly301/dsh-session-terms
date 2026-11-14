@@ -6,8 +6,8 @@ import { createUiPrimitives } from '../src/client/common.mjs';
 import { createTermEditor } from '../src/client/editor.mjs';
 import { changeState, emptyState } from '../src/terms.mjs';
 
-async function fixture() {
-  let backend = changeState(emptyState(), 'create', { name: 'Alpha', note: 'original' });
+async function fixture(color) {
+  let backend = changeState(emptyState(), 'create', { name: 'Alpha', note: 'original', color });
   backend = changeState(backend, 'create', { name: 'Beta', note: 'unrelated' });
   const calls = [];
   let closed = false;
@@ -42,9 +42,9 @@ async function fixture() {
     calls,
     backend: () => backend,
     closed: () => closed,
-    updateElsewhere(name, note) {
+    updateElsewhere(name, note, color) {
       const term = backend.terms.find((item) => item.name === name);
-      backend = changeState(backend, 'update', { id: term.id, name, note });
+      backend = changeState(backend, 'update', { id: term.id, name, note, color });
     },
     removeElsewhere() {
       backend = changeState(backend, 'delete', { id: entry.id });
@@ -60,6 +60,56 @@ async function fixture() {
     },
   };
 }
+
+async function chooseColor(container, color) {
+  const picker = container.querySelector('input[type="color"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(picker, color);
+  await React.act(async () => {
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+}
+
+test('color selection previews and saves the chosen value with the edit baseline', async () => {
+  const f = await fixture();
+  try {
+    assert.equal(button(f.container, 'defaultColor').getAttribute('aria-pressed'), 'true');
+    await chooseColor(f.container, '#2868b4');
+    assert.equal(button(f.container, 'defaultColor').getAttribute('aria-pressed'), 'false');
+    assert.equal(f.container.querySelector('.st-color-preview').style.color, 'rgb(40, 104, 180)');
+    await submit(f.container.querySelector('form'));
+    assert.equal(f.calls[0].payload.color, '#2868b4');
+    assert.equal(f.calls[0].payload.expectedVersion, 1);
+    assert.equal(f.backend().terms[0].color, '#2868b4');
+  } finally {
+    await f.close();
+  }
+});
+
+test('default color resets an existing selection and reload refreshes the color baseline', async () => {
+  const f = await fixture('#2868b4');
+  try {
+    assert.equal(f.container.querySelector('input[type="color"]').value, '#2868b4');
+    await click(button(f.container, 'defaultColor'));
+    assert.equal(f.container.querySelector('.st-color-preview').style.color, '');
+    await submit(f.container.querySelector('form'));
+    assert.equal(f.backend().terms[0].color, null);
+  } finally {
+    await f.close();
+  }
+  const g = await fixture('#2868b4');
+  try {
+    await chooseColor(g.container, '#b45309');
+    g.updateElsewhere('Alpha', 'original', '#ab2378');
+    await g.refresh();
+    assert.equal(button(g.container, 'save').disabled, true);
+    assert.equal(g.container.querySelector('input[type="color"]').value, '#b45309');
+    await click(button(g.container, 'reloadLatest'));
+    assert.equal(g.container.querySelector('input[type="color"]').value, '#ab2378');
+    assert.equal(button(g.container, 'save').disabled, false);
+  } finally {
+    await g.close();
+  }
+});
 
 test('foreground refresh cannot combine an old draft with the new store revision', async () => {
   const f = await fixture();

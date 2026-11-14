@@ -155,6 +155,23 @@ async function main() {
     for (let i = 0; i < 3; i++) assert.equal(countNotes(await send(`灯塔第${i}次讨论`)), 1);
     assert.equal(gate.state.appended, 1);
   });
+  await test('仅修改颜色不重复提供备注，压缩后仍补回当前备注', async ({
+    gate,
+    terms,
+    send,
+    compact,
+  }) => {
+    await send('灯塔');
+    terms[0] = { ...terms[0], color: '#2868b4', version: 2 };
+    const request = await send('灯塔');
+    assert.equal(gate.state.appended, 1);
+    assert.equal(countNotes(request), 1);
+    const note = request.messages.find((message) => message.source?.kind === 'session-terms');
+    assert.equal(Object.hasOwn(JSON.parse(textOf(note)), 'color'), false);
+    compact();
+    assert.equal(countNotes(await send('灯塔')), 1);
+    assert.equal(gate.state.appended, 2);
+  });
   await test('修改备注后提供新版本，后续不重复追加', async ({ gate, terms, send }) => {
     await send('灯塔');
     terms[0] = { ...terms[0], version: 2, note: '新版登录与账号服务重构' };

@@ -187,7 +187,11 @@ export function createManager({ React, useTerms, ui, TermEditor }) {
         h(
           'div',
           { className: 'st-row-main' },
-          h('div', { className: 'st-row-name' }, term.name),
+          h(
+            'div',
+            { className: 'st-row-name', style: { color: term.color ?? undefined } },
+            term.name,
+          ),
           h('div', { className: 'st-row-note' }, term.note || t('noNote')),
         ),
         selecting

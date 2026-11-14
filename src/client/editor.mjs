@@ -6,6 +6,7 @@ export function createTermEditor({ React, useTerms, ui }) {
     const [state, store] = useTerms(sessionId);
     const [name, setName] = useState(term?.name ?? initialName);
     const [note, setNote] = useState(term?.note ?? '');
+    const [color, setColor] = useState(term?.color ?? null);
     const [entry, setEntry] = useState(() => (term ? { ...term } : null));
     const [notice, setNotice] = useState(false);
     const [invalid, setInvalid] = useState(false);
@@ -29,6 +30,7 @@ export function createTermEditor({ React, useTerms, ui }) {
         setEntry({ ...current });
         setName(current.name);
         setNote(current.note);
+        setColor(current.color ?? null);
       } else {
         // Explicit recovery preserves a deleted term's draft as a new term.
         setEntry(null);
@@ -59,14 +61,15 @@ export function createTermEditor({ React, useTerms, ui }) {
         setEntry({ ...duplicate });
         setName(duplicate.name);
         setNote(duplicate.note);
+        setColor(duplicate.color ?? null);
         setNotice(true);
         setInvalid(false);
         noteRef.current?.focus();
         return;
       }
       const payload = entry
-        ? { id: entry.id, expectedVersion: entry.version, name: clean, note }
-        : { name: clean, note };
+        ? { id: entry.id, expectedVersion: entry.version, name: clean, note, color }
+        : { name: clean, note, color };
       if (await store.mutate(entry ? 'update' : 'create', payload)) onClose();
     }
 
@@ -111,6 +114,31 @@ export function createTermEditor({ React, useTerms, ui }) {
               onChange: (event) => setNote(event.target.value),
               disabled: state.busy,
             }),
+          ),
+          h(
+            'div',
+            { className: 'st-color-row' },
+            h(
+              'label',
+              { className: 'st-color-label' },
+              t('color'),
+              h('input', {
+                type: 'color',
+                className: 'st-color-input',
+                value: color ?? '#c05a42',
+                onChange: (event) => setColor(event.target.value),
+                disabled: busy,
+              }),
+            ),
+            button(t('defaultColor'), () => setColor(null), {
+              disabled: busy,
+              'aria-pressed': color === null,
+            }),
+            h(
+              'span',
+              { className: 'st-color-preview', style: { color: color ?? undefined } },
+              name.trim() || t('colorPreview'),
+            ),
           ),
           notice ? h('p', { role: 'status' }, t('duplicate')) : null,
           missing || conflict

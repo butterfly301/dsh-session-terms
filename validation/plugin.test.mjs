@@ -193,6 +193,73 @@ test('new selections replace the open draft and session switches isolate dock st
   }
 });
 
+test('registered dock scopes colors to its session and releases highlights when sessions change', async () => {
+  const previousCSS = window.CSS;
+  const previousHighlight = window.Highlight;
+  const highlights = new Map([['other-plugin', new Set()]]);
+  window.CSS = { highlights };
+  window.Highlight = class extends Set {};
+  const current = host();
+  await current.ctx.remote.commands.execute(
+    'A',
+    '/session-terms ' +
+      JSON.stringify({
+        action: 'create',
+        payload: { name: '灯塔', note: 'test', color: '#2868b4' },
+      }),
+    [],
+  );
+  createClientPlugin({ React, resources: { dictionaries: {}, errorCodes: [] }, styles: '' }).apply(
+    current.ctx,
+  );
+  const Dock = current.slots.get('conversation.input.dock').Component;
+  let changeSession;
+  function Conversation() {
+    const [sessionId, setSessionId] = React.useState('A');
+    changeSession = setSessionId;
+    return React.createElement(
+      'div',
+      { 'data-conversation-region': 'chat', 'data-conversation-session': sessionId },
+      React.createElement(
+        'div',
+        { 'data-chat-flow-kind': 'user' },
+        React.createElement(
+          'div',
+          { 'data-message-bubble': '' },
+          React.createElement('span', { className: '_plainRun_fbulu_6' }, '灯塔'),
+        ),
+      ),
+      React.createElement(
+        'div',
+        { 'data-conversation-region': 'composer' },
+        React.createElement(Dock, { sessionId, useSession: session, t: (key) => key }),
+      ),
+    );
+  }
+  const mounted = await mount(React.createElement(Conversation));
+  try {
+    const ownedKeys = () =>
+      [...highlights.keys()].filter((key) => key.startsWith('session-terms-'));
+    assert.equal(ownedKeys().length, 1);
+    const initial = ownedKeys()[0];
+    assert.equal([...highlights.get(initial)][0].toString(), '灯塔');
+    assert.equal(mounted.container.querySelector('.st-chip').style.color, 'rgb(40, 104, 180)');
+    await React.act(async () => {
+      changeSession('B');
+    });
+    assert.equal(highlights.has(initial), false);
+    assert.equal(ownedKeys().length, 1);
+    assert.equal(document.head.querySelectorAll('[data-session-terms-highlights]').length, 1);
+  } finally {
+    await mounted.unmount();
+    current.dispose();
+    window.CSS = previousCSS;
+    window.Highlight = previousHighlight;
+  }
+  assert.deepEqual([...highlights.keys()], ['other-plugin']);
+  assert.equal(document.head.querySelectorAll('[data-session-terms-highlights]').length, 0);
+});
+
 test('published artifact registers successfully and requests only the host React module', async () => {
   let declaration;
   const source = await readFile(new URL('../client.js', import.meta.url), 'utf8');

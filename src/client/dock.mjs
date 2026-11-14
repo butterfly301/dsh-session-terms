@@ -1,3 +1,4 @@
+import { createTermHighlighter } from './highlight.mjs';
 import {
   collectSelection,
   dragProps,
@@ -42,6 +43,7 @@ export function createDock({ React, useTerms, ui, TermEditor, Manager, focusInpu
           ref,
           type: 'button',
           className: 'st-chip',
+          style: { color: term.color ?? undefined },
           disabled: busy,
           'aria-describedby': id,
           onPointerDown(event) {
@@ -109,6 +111,21 @@ export function createDock({ React, useTerms, ui, TermEditor, Manager, focusInpu
     const [manager, setManager] = useState(false);
     const [contextTerm, setContextTerm] = useState(null);
     const data = state.data;
+    const anchorRef = useRef(null);
+    const highlighterRef = useRef(null);
+    useEffect(() => {
+      const region = anchorRef.current?.closest('[data-conversation-region="chat"]');
+      if (!region || region.getAttribute('data-conversation-session') !== sessionId) return;
+      const highlighter = createTermHighlighter(region);
+      highlighterRef.current = highlighter;
+      return () => {
+        highlighter.dispose();
+        highlighterRef.current = null;
+      };
+    }, [sessionId]);
+    useEffect(() => {
+      highlighterRef.current?.setTerms(data?.terms ?? []);
+    }, [data?.terms]);
     const busy = state.busy || state.loading;
     const expanded = data?.expanded ?? false;
     const searchId = useId();
@@ -167,6 +184,7 @@ export function createDock({ React, useTerms, ui, TermEditor, Manager, focusInpu
       h(
         'section',
         {
+          ref: anchorRef,
           className: 'st-root',
           'data-expanded': expanded,
           'aria-label': t('terms'),

@@ -12,6 +12,9 @@
     "search": "搜索术语和备注",
     "name": "术语",
     "note": "备注",
+    "color": "文字颜色",
+    "defaultColor": "默认颜色",
+    "colorPreview": "预览",
     "noNote": "暂无备注",
     "managerEmpty": "您还没有添加术语哦~",
     "noResults": "没有匹配的术语",
@@ -61,6 +64,7 @@
   "errors": {
     "invalid-name": "请填写术语名称。",
     "invalid-note": "备注必须是文字。",
+    "invalid-color": "请选择有效的颜色。",
     "duplicate-name": "该名称已存在，请编辑原词条。",
     "missing-term": "词条已被删除，请刷新后重试。",
     "conflict": "术语库已在其他窗口更新，请刷新后重试。",

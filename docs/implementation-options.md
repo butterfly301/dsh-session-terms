@@ -29,6 +29,16 @@
 | [interactions.mjs](../src/client/interactions.mjs) | 文字收录、引用、拖动和滚轮规则               |
 | [styles.css](../src/client/styles.css)             | 插件样式和响应式布局                         |
 
+## 术语颜色
+
+词条的可选 `color` 字段保存六位十六进制颜色，`null` 表示默认颜色，旧数据中的缺失值也按默认颜色处理。颜色修改参与词条版本与并发校验，模型读取的内容仍为名称和备注。
+
+[highlight.mjs](../src/client/highlight.mjs)通过 CSS Custom Highlight API 为当前会话的用户消息和 AI 回复正文着色。每个挂载的会话拥有独立的高亮注册键、样式与观察器。正文变动合并后刷新，未变化的正文复用范围缓存。卸载时释放本会话的资源。
+
+匹配逻辑共用 [matching.mjs](../src/matching.mjs)，保留英文词边界、大小写和长词优先规则。文字范围可跨越行内格式节点，段落和代码块构成匹配边界。思考过程、工具输出、输入草稿及嵌套会话排除在着色范围外。
+
+用户正文和流式回复的识别包含 DSH `0.2.2-rc.1` 的 DOM 结构适配，升级宿主时需复核。浏览器缺少 Highlight API 时使用默认显示。运行 `node validation/browser-colors.mjs` 可打开独立浏览器测试页，检查颜色编辑、默认恢复、流式文字和主题显示，完成后停止该进程。
+
 ## 数据与并发
 
 Host 按 `sessionId` 保存数据，同一会话的写入串行执行。`expectedRevision` 校验术语库修订号；编辑携带的 `expectedVersion` 固定为打开词条时的版本。冲突时刷新数据，保留未保存草稿，由用户载入最新内容后继续编辑。原词条已删除时，草稿可转为新增。

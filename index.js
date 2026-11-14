@@ -17,6 +17,12 @@ const termSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   note: z.string(),
+  color: z
+    .string()
+    .length(7)
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
   version: z.number().int().positive(),
   order: z.number().int().nonnegative(),
 });

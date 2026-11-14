@@ -83,6 +83,7 @@ registerHooks({
     const created = await command(ctx, a.agent, 'create', {
       name: '灯塔',
       note: '登录服务重构项目的代称',
+      color: '#2868B4',
     });
     assert.equal(created.ok, true);
     assert.equal(created.state.terms.length, 1);
@@ -125,6 +126,7 @@ registerHooks({
     const state = (await command(ctx, restored.agent, 'get')).state;
     assert.equal(state.terms[0].name, '灯塔');
     assert.equal(state.terms[0].note, '登录服务重构项目的代称');
+    assert.equal(state.terms[0].color, '#2868b4');
     assert.equal(state.expanded, true);
     const fork = await makeAgent(ctx, 'fork-new-session');
     assert.equal((await command(ctx, fork.agent, 'get')).state.terms.length, 0);
