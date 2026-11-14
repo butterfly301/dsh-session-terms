@@ -55,7 +55,7 @@ export function createUiPrimitives(React, errorCodes) {
     });
   }
 
-  function Modal({ title, onClose, children, t, wide = false, inert = false }) {
+  function Modal({ title, onClose, children, t, wide = false, inert = false, closeIcon = wide }) {
     const ref = useRef(null);
     const titleId = useId();
     useEffect(() => {
@@ -90,7 +90,7 @@ export function createUiPrimitives(React, errorCodes) {
         'header',
         { className: 'st-dialog-head' },
         h('h2', { id: titleId }, title),
-        wide ? iconButton('close', t('close'), onClose) : button(t('close'), onClose),
+        closeIcon ? iconButton('close', t('close'), onClose) : button(t('close'), onClose),
       ),
       h('div', { className: 'st-body' }, children),
     );

@@ -345,7 +345,7 @@
         className: `${options.className ?? "st-btn"} st-icon-btn`
       });
     }
-    function Modal({ title, onClose, children, t, wide = false, inert = false }) {
+    function Modal({ title, onClose, children, t, wide = false, inert = false, closeIcon = wide }) {
       const ref = useRef(null);
       const titleId = useId();
       useEffect(() => {
@@ -379,7 +379,7 @@
           "header",
           { className: "st-dialog-head" },
           h("h2", { id: titleId }, title),
-          wide ? iconButton("close", t("close"), onClose) : button(t("close"), onClose)
+          closeIcon ? iconButton("close", t("close"), onClose) : button(t("close"), onClose)
         ),
         h("div", { className: "st-body" }, children)
       );
@@ -900,7 +900,7 @@
       }
       return h(
         Modal,
-        { title: t(entry ? "editTitle" : "addTitle"), onClose: close, t },
+        { title: t(entry ? "editTitle" : "addTitle"), onClose: close, closeIcon: true, t },
         h(
           "form",
           { onSubmit: save },

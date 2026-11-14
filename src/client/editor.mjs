@@ -78,7 +78,7 @@ export function createTermEditor({ React, useTerms, ui }) {
 
     return h(
       Modal,
-      { title: t(entry ? 'editTitle' : 'addTitle'), onClose: close, t },
+      { title: t(entry ? 'editTitle' : 'addTitle'), onClose: close, closeIcon: true, t },
       h(
         'form',
         { onSubmit: save },
