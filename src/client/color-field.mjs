@@ -5,6 +5,20 @@ const channels = [
   ['g', 'G', 'colorGreen', 'colorGreenValue'],
   ['b', 'B', 'colorBlue', 'colorBlueValue'],
 ];
+const presets = [
+  '#e53935',
+  '#ec407a',
+  '#fb8c00',
+  '#43a047',
+  '#1e88e5',
+  '#8e24aa',
+  '#fdd835',
+  '#00897b',
+  '#00acc1',
+  '#8d6e63',
+  '#212121',
+  '#ffffff',
+];
 const bound = (value, max) => Math.max(0, Math.min(max, value));
 const selectionOf = (hex) => ({ hex, hsv: rgbToHsv(hexToRgb(hex)), draft: hex.toUpperCase() });
 
@@ -18,7 +32,8 @@ export function createColorField(React) {
     const dragRef = useRef(null);
     const hexRef = useRef(null);
     const id = useId();
-    const [open, setOpen] = useState(false);
+    const [mode, setMode] = useState(null);
+    const open = mode !== null;
     const [defaultColor, setDefaultColor] = useState('#000000');
     const resolvedColor = normalizeHex(color) ?? defaultColor;
     const [selection, setSelection] = useState(() => selectionOf(resolvedColor));
@@ -62,7 +77,7 @@ export function createColorField(React) {
     useLayoutEffect(() => {
       if (!open) return;
       if (disabled) {
-        setOpen(false);
+        setMode(null);
         return;
       }
       const panel = panelRef.current;
@@ -81,17 +96,22 @@ export function createColorField(React) {
         panel.style.top = `${Math.max(12, Math.min(top, view.innerHeight - bounds.height - 12))}px`;
       }
       function outside(event) {
-        if (!panel.contains(event.target) && !swatch.contains(event.target)) setOpen(false);
+        if (!panel.contains(event.target) && !swatch.contains(event.target)) setMode(null);
       }
       function escape(event) {
         if (event.key !== 'Escape') return;
         event.preventDefault();
         event.stopPropagation();
-        setOpen(false);
+        setMode(null);
         swatch.focus({ preventScroll: true });
       }
       position();
-      panel.querySelector('input')?.focus({ preventScroll: true });
+      const first =
+        mode === 'presets'
+          ? (panel.querySelector('.st-color-preset[aria-pressed="true"]') ??
+            panel.querySelector('.st-color-preset'))
+          : panel.querySelector('.st-color-sv');
+      first?.focus({ preventScroll: true });
       doc.addEventListener('pointerdown', outside, true);
       doc.addEventListener('click', outside, true);
       doc.addEventListener('keydown', escape, true);
@@ -106,7 +126,7 @@ export function createColorField(React) {
         view.removeEventListener('resize', position);
         if (panel.isConnected) panel.hidePopover();
       };
-    }, [open, disabled]);
+    }, [mode, disabled]);
 
     function applyHsv(next) {
       if (disabled) return;
@@ -140,7 +160,7 @@ export function createColorField(React) {
       setSelection({ ...current, draft: resolvedColor.toUpperCase() });
     }
     function close() {
-      setOpen(false);
+      setMode(null);
       resetDraft();
       swatchRef.current.focus({ preventScroll: true });
     }
@@ -166,7 +186,7 @@ export function createColorField(React) {
           'aria-controls': open ? `${id}-picker` : undefined,
           onClick: () => {
             resetDraft();
-            setOpen(!open);
+            setMode(open ? null : 'presets');
           },
         },
         h('span', { className: 'st-color-swatch', style: { backgroundColor: resolvedColor } }),
@@ -198,7 +218,7 @@ export function createColorField(React) {
             {
               ref: panelRef,
               id: `${id}-picker`,
-              className: 'st-color-popover',
+              className: `st-color-popover${mode === 'presets' ? ' st-color-palette' : ''}`,
               popover: 'manual',
               role: 'dialog',
               'aria-labelledby': `${id}-title`,
@@ -213,7 +233,11 @@ export function createColorField(React) {
             h(
               'header',
               { className: 'st-color-picker-head' },
-              h('strong', { id: `${id}-title` }, t('colorPicker')),
+              h(
+                'strong',
+                { id: `${id}-title` },
+                t(mode === 'presets' ? 'colorPresets' : 'colorPicker'),
+              ),
               h(
                 'button',
                 {
@@ -225,158 +249,210 @@ export function createColorField(React) {
                 '×',
               ),
             ),
-            h('div', {
-              className: 'st-color-sv',
-              'aria-hidden': true,
-              style: { backgroundColor: `hsl(${hsv.h} 100% 50%)` },
-              onPointerDown(event) {
-                if (event.button !== 0 || disabled) return;
-                event.preventDefault();
-                dragRef.current = event.pointerId ?? 'mouse';
-                if (event.pointerId !== undefined)
-                  event.currentTarget.setPointerCapture?.(event.pointerId);
-                point(event);
-              },
-              onPointerMove(event) {
-                if (dragRef.current === (event.pointerId ?? 'mouse')) point(event);
-              },
-              onPointerUp(event) {
-                dragRef.current = null;
-                if (event.currentTarget.hasPointerCapture?.(event.pointerId))
-                  event.currentTarget.releasePointerCapture(event.pointerId);
-              },
-              onPointerCancel: () => {
-                dragRef.current = null;
-              },
-              onLostPointerCapture: () => {
-                dragRef.current = null;
-              },
-              children: h('span', {
-                className: 'st-color-sv-cursor',
-                style: { left: `${hsv.s}%`, top: `${100 - hsv.v}%` },
-              }),
-            }),
-            h(
-              'label',
-              { className: 'st-color-hue-label' },
-              t('colorHue'),
-              h('input', {
-                type: 'range',
-                className: 'st-color-range st-color-hue',
-                min: 0,
-                max: 360,
-                step: 1,
-                value: Math.round(hsv.h),
-                'aria-label': t('colorHue'),
-                onChange: (event) => number(event, 360, (h) => applyHsv({ ...hsv, h })),
-              }),
-            ),
-            h(
-              'div',
-              { className: 'st-color-percentages' },
-              ...[
-                ['s', 'colorSaturation'],
-                ['v', 'colorValue'],
-              ].map(([key, label]) =>
-                h(
-                  'label',
-                  { key, className: 'st-color-percentage' },
-                  t(label),
-                  h(
-                    'span',
-                    null,
-                    h('input', {
-                      type: 'number',
-                      className: 'st-field st-color-number',
-                      min: 0,
-                      max: 100,
-                      step: 1,
-                      value: Math.round(hsv[key]),
-                      'aria-label': t(label),
-                      onChange: (event) =>
-                        number(event, 100, (value) => applyHsv({ ...hsv, [key]: value })),
-                    }),
-                    h('span', { 'aria-hidden': true }, '%'),
-                  ),
-                ),
-              ),
-            ),
-            h(
-              'div',
-              { className: 'st-color-channels' },
-              ...channels.map(([key, label, sliderLabel, valueLabel]) =>
-                h(
-                  'div',
-                  { key, className: 'st-color-channel' },
-                  h('span', { 'aria-hidden': true }, label),
-                  h('input', {
-                    type: 'range',
-                    className: 'st-color-range',
-                    min: 0,
-                    max: 255,
-                    step: 1,
-                    value: rgb[key],
-                    style: {
-                      background: `linear-gradient(to right, ${rgbToHex({ ...rgb, [key]: 0 })}, ${rgbToHex({ ...rgb, [key]: 255 })})`,
-                    },
-                    'aria-label': t(sliderLabel),
-                    onChange: (event) =>
-                      number(event, 255, (value) => applyRgb({ ...rgb, [key]: value })),
-                  }),
-                  h('input', {
-                    type: 'number',
-                    className: 'st-field st-color-number',
-                    min: 0,
-                    max: 255,
-                    step: 1,
-                    value: rgb[key],
-                    'aria-label': t(valueLabel),
-                    onChange: (event) =>
-                      number(event, 255, (value) => applyRgb({ ...rgb, [key]: value })),
-                  }),
-                ),
-              ),
-            ),
-            h(
-              'label',
-              { className: 'st-color-hex-label' },
-              t('colorHex'),
-              h('input', {
-                ref: hexRef,
-                type: 'text',
-                className: 'st-field st-color-hex',
-                value: draft,
-                maxLength: 7,
-                autoComplete: 'off',
-                spellCheck: false,
-                'aria-label': t('colorHex'),
-                'aria-invalid': invalidHex,
-                'aria-describedby': invalidHex ? `${id}-hex-error` : undefined,
-                onChange(event) {
-                  const draft = event.target.value;
-                  const hex = normalizeHex(draft);
-                  if (hex) {
-                    const next = selectionOf(hex);
-                    if (next.hsv.s === 0) next.hsv.h = hsv.h;
-                    setSelection({ ...next, draft });
-                    onChange(hex);
-                  } else setSelection({ ...current, draft });
-                },
-                onBlur: resetDraft,
-              }),
-            ),
-            invalidHex
+            mode === 'presets'
               ? h(
-                  'p',
-                  { className: 'st-color-hex-error', id: `${id}-hex-error` },
-                  t('colorHexInvalid'),
+                  React.Fragment,
+                  null,
+                  h(
+                    'div',
+                    {
+                      className: 'st-color-preset-grid',
+                      role: 'group',
+                      'aria-label': t('colorPresets'),
+                    },
+                    ...presets.map((hex) => {
+                      const selected = normalizeHex(color) === hex;
+                      const { r, g, b } = hexToRgb(hex);
+                      const ink = 0.2126 * r + 0.7152 * g + 0.0722 * b > 145 ? '#000' : '#fff';
+                      return h(
+                        'button',
+                        {
+                          key: hex,
+                          type: 'button',
+                          className: 'st-color-preset',
+                          title: hex.toUpperCase(),
+                          'aria-label': `${t('color')} ${hex.toUpperCase()}`,
+                          'aria-pressed': selected,
+                          style: { backgroundColor: hex, color: ink },
+                          onClick() {
+                            setSelection(selectionOf(hex));
+                            onChange(hex);
+                            setMode(null);
+                            swatchRef.current.focus({ preventScroll: true });
+                          },
+                        },
+                        selected
+                          ? h(
+                              'svg',
+                              {
+                                width: 16,
+                                height: 16,
+                                viewBox: '0 0 20 20',
+                                fill: 'none',
+                                'aria-hidden': true,
+                              },
+                              h('path', {
+                                d: 'M4 10l4 4 8-8',
+                                stroke: 'currentColor',
+                                strokeWidth: 2.5,
+                                strokeLinecap: 'round',
+                                strokeLinejoin: 'round',
+                              }),
+                            )
+                          : null,
+                      );
+                    }),
+                  ),
+                  h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'st-color-custom',
+                      onClick: () => setMode('custom'),
+                    },
+                    t('customColor'),
+                  ),
                 )
-              : null,
-            h(
-              'p',
-              { className: 'st-color-state' },
-              t(color === null ? 'defaultColor' : 'customColor'),
-            ),
+              : h(
+                  React.Fragment,
+                  null,
+                  h('div', {
+                    className: 'st-color-sv',
+                    role: 'slider',
+                    tabIndex: 0,
+                    'aria-label': t('colorSaturationValue'),
+                    'aria-valuemin': 0,
+                    'aria-valuemax': 100,
+                    'aria-valuenow': Math.round(hsv.s),
+                    'aria-valuetext': `${t('colorSaturation')} ${Math.round(hsv.s)}%, ${t('colorValue')} ${Math.round(hsv.v)}%`,
+                    'aria-description': t('colorSvKeyboard'),
+                    onKeyDown(event) {
+                      const step = event.shiftKey ? 10 : 1;
+                      const next = { ...hsv };
+                      if (event.key === 'ArrowLeft') next.s = bound(hsv.s - step, 100);
+                      else if (event.key === 'ArrowRight') next.s = bound(hsv.s + step, 100);
+                      else if (event.key === 'ArrowUp') next.v = bound(hsv.v + step, 100);
+                      else if (event.key === 'ArrowDown') next.v = bound(hsv.v - step, 100);
+                      else return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      applyHsv(next);
+                    },
+                    style: { backgroundColor: `hsl(${hsv.h} 100% 50%)` },
+                    onPointerDown(event) {
+                      if (event.button !== 0 || disabled) return;
+                      event.preventDefault();
+                      dragRef.current = event.pointerId ?? 'mouse';
+                      if (event.pointerId !== undefined)
+                        event.currentTarget.setPointerCapture?.(event.pointerId);
+                      point(event);
+                    },
+                    onPointerMove(event) {
+                      if (dragRef.current === (event.pointerId ?? 'mouse')) point(event);
+                    },
+                    onPointerUp(event) {
+                      dragRef.current = null;
+                      if (event.currentTarget.hasPointerCapture?.(event.pointerId))
+                        event.currentTarget.releasePointerCapture(event.pointerId);
+                    },
+                    onPointerCancel: () => {
+                      dragRef.current = null;
+                    },
+                    onLostPointerCapture: () => {
+                      dragRef.current = null;
+                    },
+                    children: h('span', {
+                      className: 'st-color-sv-cursor',
+                      style: { left: `${hsv.s}%`, top: `${100 - hsv.v}%` },
+                    }),
+                  }),
+                  h(
+                    'label',
+                    { className: 'st-color-hue-label' },
+                    t('colorHue'),
+                    h('input', {
+                      type: 'range',
+                      className: 'st-color-range st-color-hue',
+                      min: 0,
+                      max: 360,
+                      step: 1,
+                      value: Math.round(hsv.h),
+                      'aria-label': t('colorHue'),
+                      onChange: (event) => number(event, 360, (h) => applyHsv({ ...hsv, h })),
+                    }),
+                  ),
+                  h(
+                    'div',
+                    { className: 'st-color-channels' },
+                    ...channels.map(([key, label, sliderLabel, valueLabel]) =>
+                      h(
+                        'div',
+                        { key, className: 'st-color-channel' },
+                        h('span', { 'aria-hidden': true }, label),
+                        h('input', {
+                          type: 'range',
+                          className: 'st-color-range',
+                          min: 0,
+                          max: 255,
+                          step: 1,
+                          value: rgb[key],
+                          style: {
+                            background: `linear-gradient(to right, ${rgbToHex({ ...rgb, [key]: 0 })}, ${rgbToHex({ ...rgb, [key]: 255 })})`,
+                          },
+                          'aria-label': t(sliderLabel),
+                          onChange: (event) =>
+                            number(event, 255, (value) => applyRgb({ ...rgb, [key]: value })),
+                        }),
+                        h('input', {
+                          type: 'number',
+                          className: 'st-field st-color-number',
+                          min: 0,
+                          max: 255,
+                          step: 1,
+                          value: rgb[key],
+                          'aria-label': t(valueLabel),
+                          onChange: (event) =>
+                            number(event, 255, (value) => applyRgb({ ...rgb, [key]: value })),
+                        }),
+                      ),
+                    ),
+                  ),
+                  h(
+                    'label',
+                    { className: 'st-color-hex-label' },
+                    t('colorHex'),
+                    h('input', {
+                      ref: hexRef,
+                      type: 'text',
+                      className: 'st-field st-color-hex',
+                      value: draft,
+                      maxLength: 7,
+                      autoComplete: 'off',
+                      spellCheck: false,
+                      'aria-label': t('colorHex'),
+                      'aria-invalid': invalidHex,
+                      'aria-describedby': invalidHex ? `${id}-hex-error` : undefined,
+                      onChange(event) {
+                        const draft = event.target.value;
+                        const hex = normalizeHex(draft);
+                        if (hex) {
+                          const next = selectionOf(hex);
+                          if (next.hsv.s === 0) next.hsv.h = hsv.h;
+                          setSelection({ ...next, draft });
+                          onChange(hex);
+                        } else setSelection({ ...current, draft });
+                      },
+                      onBlur: resetDraft,
+                    }),
+                  ),
+                  invalidHex
+                    ? h(
+                        'p',
+                        { className: 'st-color-hex-error', id: `${id}-hex-error` },
+                        t('colorHexInvalid'),
+                      )
+                    : null,
+                ),
           )
         : null,
     );

@@ -4,8 +4,12 @@ import { React, mount, input, click, button } from './dom.mjs';
 import { createColorField } from '../src/client/color-field.mjs';
 
 const Field = createColorField(React);
-async function pick(container, value) {
+async function openCustom(container) {
   await click(button(container, 'color'));
+  await click(button(container, 'customColor'));
+}
+async function pick(container, value) {
+  await openCustom(container);
   await input(container.querySelector('.st-color-hex'), value);
   await click(button(container, 'closeColorPicker'));
 }
@@ -27,6 +31,68 @@ async function controlled(initialColor = '#ff0000', options = {}) {
   }
   return { ...(await mount(React.createElement(Controlled))), values };
 }
+
+test('swatch opens presets first and choosing a preset applies it and restores focus', async () => {
+  const f = await controlled(null);
+  try {
+    await click(button(f.container, 'color'));
+    const panel = f.container.querySelector('.st-color-palette');
+    assert(panel);
+    const choices = [...panel.querySelectorAll('.st-color-preset')];
+    assert.equal(choices.length, 12);
+    assert.equal(panel.querySelector('input'), null);
+    assert.equal(panel.querySelector('.st-color-sv'), null);
+    assert.equal(panel.querySelectorAll('.st-color-custom').length, 1);
+    assert.equal(
+      choices.filter((choice) => choice.getAttribute('aria-pressed') === 'true').length,
+      0,
+    );
+    await click(choices[0]);
+    assert.deepEqual(f.values, ['#e53935']);
+    assert.equal(f.container.querySelector('.st-color-popover'), null);
+    assert.equal(
+      f.container.querySelector('.st-color-swatch').style.backgroundColor,
+      'rgb(229, 57, 53)',
+    );
+    assert.equal(document.activeElement, button(f.container, 'color'));
+    await click(button(f.container, 'color'));
+    assert.equal(f.container.querySelectorAll('.st-color-preset[aria-pressed="true"]').length, 1);
+    assert.equal(
+      f.container.querySelectorAll('.st-color-preset[aria-pressed="true"] svg').length,
+      1,
+    );
+    assert.equal(
+      document.activeElement,
+      f.container.querySelector('.st-color-preset[aria-pressed="true"]'),
+    );
+  } finally {
+    await f.unmount();
+  }
+});
+
+test('custom action replaces the palette with the detailed picker without changing color', async () => {
+  const f = await controlled('#2868b4');
+  try {
+    await click(button(f.container, 'color'));
+    assert.equal(f.container.querySelector('.st-color-hex'), null);
+    await click(button(f.container, 'customColor'));
+    assert.equal(f.container.querySelectorAll('.st-color-popover').length, 1);
+    assert.equal(f.container.querySelector('.st-color-palette'), null);
+    assert.equal(f.container.querySelector('.st-color-preset'), null);
+    assert(f.container.querySelector('.st-color-sv'));
+    assert.equal(f.container.querySelector('.st-color-hex').value, '#2868B4');
+    assert.equal(f.container.querySelector('.st-color-percentages'), null);
+    assert.equal(f.container.querySelector('.st-color-state'), null);
+    assert.equal(
+      f.container.querySelector('.st-color-popover').textContent.includes('defaultColor'),
+      false,
+    );
+    assert.deepEqual(f.values, []);
+    assert.equal(document.activeElement, f.container.querySelector('.st-color-sv'));
+  } finally {
+    await f.unmount();
+  }
+});
 
 test('default swatch follows theme text, custom color stays fixed, reset immediately shows default', async () => {
   const originalStyle = document.body.getAttribute('style');
@@ -122,24 +188,37 @@ test('color field releases theme observation on custom selection and unmount', a
   assert.equal(active, 0);
 });
 
-test('RGB sliders, channel numbers, hue and S/V inputs stay synchronized with six-digit Hex', async () => {
+test('custom picker keeps RGB, hue, SV keyboard controls and Hex synchronized without removed fields', async () => {
   const f = await controlled();
   const field = (label) => f.container.querySelector(`[aria-label="${label}"]`);
   try {
-    await click(button(f.container, 'color'));
+    await openCustom(f.container);
     assert.equal(f.container.querySelector('input[type="color"]'), null);
     assert.equal(f.container.querySelectorAll('input[type="range"]').length, 4);
-    assert.equal(f.container.querySelectorAll('input[type="number"]').length, 5);
-    assert(f.container.querySelector('.st-color-state').textContent.includes('customColor'));
+    assert.equal(f.container.querySelectorAll('input[type="number"]').length, 3);
+    assert.equal(f.container.querySelector('.st-color-percentages'), null);
+    assert.equal(f.container.querySelector('.st-color-state'), null);
+    assert.equal(field('colorSaturation'), null);
+    assert.equal(field('colorValue'), null);
     await input(field('colorHue'), '120');
     assert.equal(field('colorHex').value, '#00FF00');
-    await input(field('colorSaturation'), '0');
-    assert.equal(field('colorHex').value, '#FFFFFF');
+    const square = f.container.querySelector('.st-color-sv');
+    for (const [key, expected] of [
+      ['ArrowDown', '#00E600'],
+      ['ArrowUp', '#00FF00'],
+      ['ArrowLeft', '#19FF19'],
+      ['ArrowRight', '#00FF00'],
+    ]) {
+      await React.act(async () =>
+        square.dispatchEvent(
+          new KeyboardEvent('keydown', { key, shiftKey: true, bubbles: true, cancelable: true }),
+        ),
+      );
+      assert.equal(field('colorHex').value, expected);
+    }
+    await input(field('colorHex'), '#808080');
     assert.equal(field('colorHue').value, '120');
-    await input(field('colorValue'), '50');
-    assert.equal(field('colorHex').value, '#808080');
-    await input(field('colorSaturation'), '100');
-    assert.equal(field('colorHex').value, '#008000');
+    await input(field('colorHex'), '#008000');
     await input(field('colorBlueValue'), '255');
     assert.equal(field('colorHex').value, '#0080FF');
     assert.equal(field('colorBlue').value, '255');
@@ -157,7 +236,7 @@ test('RGB sliders, channel numbers, hue and S/V inputs stay synchronized with si
 test('partial and invalid Hex drafts never replace the selected color and blur restores the committed value', async () => {
   const f = await controlled('#2868b4');
   try {
-    await click(button(f.container, 'color'));
+    await openCustom(f.container);
     const hex = f.container.querySelector('.st-color-hex');
     for (const draft of ['#12', '#11223344', 'orange', '#12GG44']) {
       await input(hex, draft);
@@ -184,7 +263,7 @@ test('partial and invalid Hex drafts never replace the selected color and blur r
 test('SV square supports pointer selection and bounded dragging without changing color after release', async () => {
   const f = await controlled();
   try {
-    await click(button(f.container, 'color'));
+    await openCustom(f.container);
     const square = f.container.querySelector('.st-color-sv');
     square.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 });
     async function pointer(type, x, y) {
@@ -233,7 +312,7 @@ test('picker Enter and Escape never reach the parent form; outside clicks close 
     ),
   );
   try {
-    await click(button(f.container, 'color'));
+    await openCustom(f.container);
     let panel = f.container.querySelector('.st-color-popover');
     const hex = panel.querySelector('.st-color-hex');
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
@@ -247,7 +326,7 @@ test('picker Enter and Escape never reach the parent form; outside clicks close 
     assert.equal(escaped, 0);
     assert.equal(f.container.querySelector('.st-color-popover'), null);
     assert.equal(document.activeElement, button(f.container, 'color'));
-    await click(button(f.container, 'color'));
+    await openCustom(f.container);
     panel = f.container.querySelector('.st-color-popover');
     assert.equal(panel.getAttribute('role'), 'dialog');
     assert.equal(panel.getAttribute('popover'), 'manual');

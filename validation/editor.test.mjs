@@ -63,9 +63,26 @@ async function fixture(color) {
 
 async function chooseColor(container, color) {
   await click(button(container, 'color'));
+  await click(button(container, 'customColor'));
   await input(container.querySelector('.st-color-hex'), color);
   await click(button(container, 'closeColorPicker'));
 }
+
+test('preset selection changes the editor draft and saves with the term version baseline', async () => {
+  const f = await fixture();
+  try {
+    await click(button(f.container, 'color'));
+    await click(f.container.querySelector('.st-color-preset'));
+    assert.equal(f.container.querySelector('.st-color-popover'), null);
+    assert.equal(f.calls.length, 0);
+    await submit(f.container.querySelector('form'));
+    assert.equal(f.calls[0].payload.color, '#e53935');
+    assert.equal(f.calls[0].payload.expectedVersion, 1);
+    assert.equal(f.backend().terms[0].color, '#e53935');
+  } finally {
+    await f.close();
+  }
+});
 
 test('color selection previews and saves the chosen value with the edit baseline', async () => {
   const f = await fixture();

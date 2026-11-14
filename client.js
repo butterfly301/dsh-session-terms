@@ -467,6 +467,20 @@
     ["g", "G", "colorGreen", "colorGreenValue"],
     ["b", "B", "colorBlue", "colorBlueValue"]
   ];
+  var presets = [
+    "#e53935",
+    "#ec407a",
+    "#fb8c00",
+    "#43a047",
+    "#1e88e5",
+    "#8e24aa",
+    "#fdd835",
+    "#00897b",
+    "#00acc1",
+    "#8d6e63",
+    "#212121",
+    "#ffffff"
+  ];
   var bound2 = (value, max) => Math.max(0, Math.min(max, value));
   var selectionOf = (hex) => ({ hex, hsv: rgbToHsv(hexToRgb(hex)), draft: hex.toUpperCase() });
   function createColorField(React) {
@@ -478,7 +492,8 @@
       const dragRef = useRef(null);
       const hexRef = useRef(null);
       const id = useId();
-      const [open, setOpen] = useState(false);
+      const [mode, setMode] = useState(null);
+      const open = mode !== null;
       const [defaultColor, setDefaultColor] = useState("#000000");
       const resolvedColor = normalizeHex(color) ?? defaultColor;
       const [selection, setSelection] = useState(() => selectionOf(resolvedColor));
@@ -518,7 +533,7 @@
       useLayoutEffect(() => {
         if (!open) return;
         if (disabled) {
-          setOpen(false);
+          setMode(null);
           return;
         }
         const panel = panelRef.current;
@@ -536,17 +551,18 @@
           panel.style.top = `${Math.max(12, Math.min(top, view.innerHeight - bounds.height - 12))}px`;
         }
         function outside(event) {
-          if (!panel.contains(event.target) && !swatch.contains(event.target)) setOpen(false);
+          if (!panel.contains(event.target) && !swatch.contains(event.target)) setMode(null);
         }
         function escape(event) {
           if (event.key !== "Escape") return;
           event.preventDefault();
           event.stopPropagation();
-          setOpen(false);
+          setMode(null);
           swatch.focus({ preventScroll: true });
         }
         position();
-        panel.querySelector("input")?.focus({ preventScroll: true });
+        const first = mode === "presets" ? panel.querySelector('.st-color-preset[aria-pressed="true"]') ?? panel.querySelector(".st-color-preset") : panel.querySelector(".st-color-sv");
+        first?.focus({ preventScroll: true });
         doc.addEventListener("pointerdown", outside, true);
         doc.addEventListener("click", outside, true);
         doc.addEventListener("keydown", escape, true);
@@ -561,7 +577,7 @@
           view.removeEventListener("resize", position);
           if (panel.isConnected) panel.hidePopover();
         };
-      }, [open, disabled]);
+      }, [mode, disabled]);
       function applyHsv(next) {
         if (disabled) return;
         const hex = rgbToHex(hsvToRgb(next));
@@ -594,7 +610,7 @@
         setSelection({ ...current, draft: resolvedColor.toUpperCase() });
       }
       function close() {
-        setOpen(false);
+        setMode(null);
         resetDraft();
         swatchRef.current.focus({ preventScroll: true });
       }
@@ -619,7 +635,7 @@
             "aria-controls": open ? `${id}-picker` : void 0,
             onClick: () => {
               resetDraft();
-              setOpen(!open);
+              setMode(open ? null : "presets");
             }
           },
           h("span", { className: "st-color-swatch", style: { backgroundColor: resolvedColor } }),
@@ -650,7 +666,7 @@
           {
             ref: panelRef,
             id: `${id}-picker`,
-            className: "st-color-popover",
+            className: `st-color-popover${mode === "presets" ? " st-color-palette" : ""}`,
             popover: "manual",
             role: "dialog",
             "aria-labelledby": `${id}-title`,
@@ -665,7 +681,11 @@
           h(
             "header",
             { className: "st-color-picker-head" },
-            h("strong", { id: `${id}-title` }, t("colorPicker")),
+            h(
+              "strong",
+              { id: `${id}-title` },
+              t(mode === "presets" ? "colorPresets" : "colorPicker")
+            ),
             h(
               "button",
               {
@@ -677,152 +697,201 @@
               "×"
             )
           ),
-          h("div", {
-            className: "st-color-sv",
-            "aria-hidden": true,
-            style: { backgroundColor: `hsl(${hsv.h} 100% 50%)` },
-            onPointerDown(event) {
-              if (event.button !== 0 || disabled) return;
-              event.preventDefault();
-              dragRef.current = event.pointerId ?? "mouse";
-              if (event.pointerId !== void 0)
-                event.currentTarget.setPointerCapture?.(event.pointerId);
-              point(event);
-            },
-            onPointerMove(event) {
-              if (dragRef.current === (event.pointerId ?? "mouse")) point(event);
-            },
-            onPointerUp(event) {
-              dragRef.current = null;
-              if (event.currentTarget.hasPointerCapture?.(event.pointerId))
-                event.currentTarget.releasePointerCapture(event.pointerId);
-            },
-            onPointerCancel: () => {
-              dragRef.current = null;
-            },
-            onLostPointerCapture: () => {
-              dragRef.current = null;
-            },
-            children: h("span", {
-              className: "st-color-sv-cursor",
-              style: { left: `${hsv.s}%`, top: `${100 - hsv.v}%` }
-            })
-          }),
-          h(
-            "label",
-            { className: "st-color-hue-label" },
-            t("colorHue"),
-            h("input", {
-              type: "range",
-              className: "st-color-range st-color-hue",
-              min: 0,
-              max: 360,
-              step: 1,
-              value: Math.round(hsv.h),
-              "aria-label": t("colorHue"),
-              onChange: (event) => number(event, 360, (h2) => applyHsv({ ...hsv, h: h2 }))
-            })
-          ),
-          h(
-            "div",
-            { className: "st-color-percentages" },
-            ...[
-              ["s", "colorSaturation"],
-              ["v", "colorValue"]
-            ].map(
-              ([key, label]) => h(
-                "label",
-                { key, className: "st-color-percentage" },
-                t(label),
-                h(
-                  "span",
-                  null,
+          mode === "presets" ? h(
+            React.Fragment,
+            null,
+            h(
+              "div",
+              {
+                className: "st-color-preset-grid",
+                role: "group",
+                "aria-label": t("colorPresets")
+              },
+              ...presets.map((hex) => {
+                const selected = normalizeHex(color) === hex;
+                const { r, g, b } = hexToRgb(hex);
+                const ink = 0.2126 * r + 0.7152 * g + 0.0722 * b > 145 ? "#000" : "#fff";
+                return h(
+                  "button",
+                  {
+                    key: hex,
+                    type: "button",
+                    className: "st-color-preset",
+                    title: hex.toUpperCase(),
+                    "aria-label": `${t("color")} ${hex.toUpperCase()}`,
+                    "aria-pressed": selected,
+                    style: { backgroundColor: hex, color: ink },
+                    onClick() {
+                      setSelection(selectionOf(hex));
+                      onChange(hex);
+                      setMode(null);
+                      swatchRef.current.focus({ preventScroll: true });
+                    }
+                  },
+                  selected ? h(
+                    "svg",
+                    {
+                      width: 16,
+                      height: 16,
+                      viewBox: "0 0 20 20",
+                      fill: "none",
+                      "aria-hidden": true
+                    },
+                    h("path", {
+                      d: "M4 10l4 4 8-8",
+                      stroke: "currentColor",
+                      strokeWidth: 2.5,
+                      strokeLinecap: "round",
+                      strokeLinejoin: "round"
+                    })
+                  ) : null
+                );
+              })
+            ),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "st-color-custom",
+                onClick: () => setMode("custom")
+              },
+              t("customColor")
+            )
+          ) : h(
+            React.Fragment,
+            null,
+            h("div", {
+              className: "st-color-sv",
+              role: "slider",
+              tabIndex: 0,
+              "aria-label": t("colorSaturationValue"),
+              "aria-valuemin": 0,
+              "aria-valuemax": 100,
+              "aria-valuenow": Math.round(hsv.s),
+              "aria-valuetext": `${t("colorSaturation")} ${Math.round(hsv.s)}%, ${t("colorValue")} ${Math.round(hsv.v)}%`,
+              "aria-description": t("colorSvKeyboard"),
+              onKeyDown(event) {
+                const step = event.shiftKey ? 10 : 1;
+                const next = { ...hsv };
+                if (event.key === "ArrowLeft") next.s = bound2(hsv.s - step, 100);
+                else if (event.key === "ArrowRight") next.s = bound2(hsv.s + step, 100);
+                else if (event.key === "ArrowUp") next.v = bound2(hsv.v + step, 100);
+                else if (event.key === "ArrowDown") next.v = bound2(hsv.v - step, 100);
+                else return;
+                event.preventDefault();
+                event.stopPropagation();
+                applyHsv(next);
+              },
+              style: { backgroundColor: `hsl(${hsv.h} 100% 50%)` },
+              onPointerDown(event) {
+                if (event.button !== 0 || disabled) return;
+                event.preventDefault();
+                dragRef.current = event.pointerId ?? "mouse";
+                if (event.pointerId !== void 0)
+                  event.currentTarget.setPointerCapture?.(event.pointerId);
+                point(event);
+              },
+              onPointerMove(event) {
+                if (dragRef.current === (event.pointerId ?? "mouse")) point(event);
+              },
+              onPointerUp(event) {
+                dragRef.current = null;
+                if (event.currentTarget.hasPointerCapture?.(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+              },
+              onPointerCancel: () => {
+                dragRef.current = null;
+              },
+              onLostPointerCapture: () => {
+                dragRef.current = null;
+              },
+              children: h("span", {
+                className: "st-color-sv-cursor",
+                style: { left: `${hsv.s}%`, top: `${100 - hsv.v}%` }
+              })
+            }),
+            h(
+              "label",
+              { className: "st-color-hue-label" },
+              t("colorHue"),
+              h("input", {
+                type: "range",
+                className: "st-color-range st-color-hue",
+                min: 0,
+                max: 360,
+                step: 1,
+                value: Math.round(hsv.h),
+                "aria-label": t("colorHue"),
+                onChange: (event) => number(event, 360, (h2) => applyHsv({ ...hsv, h: h2 }))
+              })
+            ),
+            h(
+              "div",
+              { className: "st-color-channels" },
+              ...channels.map(
+                ([key, label, sliderLabel, valueLabel]) => h(
+                  "div",
+                  { key, className: "st-color-channel" },
+                  h("span", { "aria-hidden": true }, label),
+                  h("input", {
+                    type: "range",
+                    className: "st-color-range",
+                    min: 0,
+                    max: 255,
+                    step: 1,
+                    value: rgb[key],
+                    style: {
+                      background: `linear-gradient(to right, ${rgbToHex({ ...rgb, [key]: 0 })}, ${rgbToHex({ ...rgb, [key]: 255 })})`
+                    },
+                    "aria-label": t(sliderLabel),
+                    onChange: (event) => number(event, 255, (value) => applyRgb({ ...rgb, [key]: value }))
+                  }),
                   h("input", {
                     type: "number",
                     className: "st-field st-color-number",
                     min: 0,
-                    max: 100,
+                    max: 255,
                     step: 1,
-                    value: Math.round(hsv[key]),
-                    "aria-label": t(label),
-                    onChange: (event) => number(event, 100, (value) => applyHsv({ ...hsv, [key]: value }))
-                  }),
-                  h("span", { "aria-hidden": true }, "%")
+                    value: rgb[key],
+                    "aria-label": t(valueLabel),
+                    onChange: (event) => number(event, 255, (value) => applyRgb({ ...rgb, [key]: value }))
+                  })
                 )
               )
-            )
-          ),
-          h(
-            "div",
-            { className: "st-color-channels" },
-            ...channels.map(
-              ([key, label, sliderLabel, valueLabel]) => h(
-                "div",
-                { key, className: "st-color-channel" },
-                h("span", { "aria-hidden": true }, label),
-                h("input", {
-                  type: "range",
-                  className: "st-color-range",
-                  min: 0,
-                  max: 255,
-                  step: 1,
-                  value: rgb[key],
-                  style: {
-                    background: `linear-gradient(to right, ${rgbToHex({ ...rgb, [key]: 0 })}, ${rgbToHex({ ...rgb, [key]: 255 })})`
-                  },
-                  "aria-label": t(sliderLabel),
-                  onChange: (event) => number(event, 255, (value) => applyRgb({ ...rgb, [key]: value }))
-                }),
-                h("input", {
-                  type: "number",
-                  className: "st-field st-color-number",
-                  min: 0,
-                  max: 255,
-                  step: 1,
-                  value: rgb[key],
-                  "aria-label": t(valueLabel),
-                  onChange: (event) => number(event, 255, (value) => applyRgb({ ...rgb, [key]: value }))
-                })
-              )
-            )
-          ),
-          h(
-            "label",
-            { className: "st-color-hex-label" },
-            t("colorHex"),
-            h("input", {
-              ref: hexRef,
-              type: "text",
-              className: "st-field st-color-hex",
-              value: draft,
-              maxLength: 7,
-              autoComplete: "off",
-              spellCheck: false,
-              "aria-label": t("colorHex"),
-              "aria-invalid": invalidHex,
-              "aria-describedby": invalidHex ? `${id}-hex-error` : void 0,
-              onChange(event) {
-                const draft2 = event.target.value;
-                const hex = normalizeHex(draft2);
-                if (hex) {
-                  const next = selectionOf(hex);
-                  if (next.hsv.s === 0) next.hsv.h = hsv.h;
-                  setSelection({ ...next, draft: draft2 });
-                  onChange(hex);
-                } else setSelection({ ...current, draft: draft2 });
-              },
-              onBlur: resetDraft
-            })
-          ),
-          invalidHex ? h(
-            "p",
-            { className: "st-color-hex-error", id: `${id}-hex-error` },
-            t("colorHexInvalid")
-          ) : null,
-          h(
-            "p",
-            { className: "st-color-state" },
-            t(color === null ? "defaultColor" : "customColor")
+            ),
+            h(
+              "label",
+              { className: "st-color-hex-label" },
+              t("colorHex"),
+              h("input", {
+                ref: hexRef,
+                type: "text",
+                className: "st-field st-color-hex",
+                value: draft,
+                maxLength: 7,
+                autoComplete: "off",
+                spellCheck: false,
+                "aria-label": t("colorHex"),
+                "aria-invalid": invalidHex,
+                "aria-describedby": invalidHex ? `${id}-hex-error` : void 0,
+                onChange(event) {
+                  const draft2 = event.target.value;
+                  const hex = normalizeHex(draft2);
+                  if (hex) {
+                    const next = selectionOf(hex);
+                    if (next.hsv.s === 0) next.hsv.h = hsv.h;
+                    setSelection({ ...next, draft: draft2 });
+                    onChange(hex);
+                  } else setSelection({ ...current, draft: draft2 });
+                },
+                onBlur: resetDraft
+              })
+            ),
+            invalidHex ? h(
+              "p",
+              { className: "st-color-hex-error", id: `${id}-hex-error` },
+              t("colorHexInvalid")
+            ) : null
           )
         ) : null
       );
@@ -2051,10 +2120,10 @@ ${term.note}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   }
 
   // session-terms:session-terms:locales
-  var session_terms_locales_default = { "dictionaries": { "en": { "terms": "Terms", "add": "Add", "manage": "Manage", "expand": "Expand terms", "collapse": "Collapse terms", "search": "Search terms and notes", "name": "Term", "note": "Note", "color": "Text color", "defaultColor": "Default color", "colorPreview": "Preview", "colorPicker": "Color picker", "closeColorPicker": "Close color picker", "customColor": "Custom color", "colorHue": "Hue", "colorSaturation": "Saturation", "colorValue": "Value", "colorRed": "Red", "colorGreen": "Green", "colorBlue": "Blue", "colorRedValue": "Red value", "colorGreenValue": "Green value", "colorBlueValue": "Blue value", "colorHex": "Hex", "colorHexInvalid": "Enter six hexadecimal digits, such as #2868B4.", "noNote": "No note", "managerEmpty": "You haven’t added any terms yet~", "noResults": "No matching terms", "edit": "Edit", "remove": "Delete", "multiSelect": "Select multiple", "exitMultiSelect": "Exit selection mode", "selectAll": "Select all", "deselectAll": "Deselect all", "selectTerm": "Select", "deselectTerm": "Deselect", "selected": "Selected:", "deleteSelected": "Delete selected terms", "deleteSelectedTitle": "Delete selected terms?", "deleteSelectedDetail": "The selected terms and their notes will be deleted. This cannot be undone.", "confirmDelete": "Confirm deletion", "editorConflict": "This term changed elsewhere. Your draft is kept. Load the latest content before editing again.", "editorMissing": "This term was deleted. Load the latest content to save your retained draft as a new term.", "reloadLatest": "Load latest content", "noRemainingSelection": "No selected terms remain.", "clear": "Clear term library", "clearTitle": "Clear this session’s term library?", "clearDetail": "All terms and notes will be deleted. This cannot be undone.", "cancel": "Cancel", "save": "Save", "close": "Close", "addTitle": "Add term", "editTitle": "Edit term", "manageTitle": "Session term library", "required": "Enter a term name", "duplicate": "Opened the existing term and kept its note", "deleted": "Term deleted", "undo": "Undo", "loading": "Loading terms", "retry": "Retry", "transport": "The term service is not connected", "failed": "The term operation failed", "invalid": "The term service returned invalid data", "insertFailed": "The term could not be inserted. Your draft is unchanged. Choose an insertion point and try again.", "quoteText": "Quote text", "pin": "Save as term", "selectionExpired": "The selection expired. Select the text again.", "drag": "Drag to reorder terms", "busy": "Saving", "total": "Total terms", "errors.invalid-name": "Enter a term name.", "errors.invalid-note": "The note must be text.", "errors.invalid-color": "Choose a valid color.", "errors.duplicate-name": "This name already exists. Edit the existing term.", "errors.missing-term": "This term was deleted. Refresh and try again.", "errors.conflict": "The term library changed in another window. Refresh and try again.", "errors.invalid-restore": "This term cannot be restored.", "errors.duplicate-id": "This term has already been restored.", "errors.invalid-selection": "Select one or more valid terms and try again.", "errors.invalid-order": "The term list changed. Refresh before reordering.", "errors.invalid-expanded": "The expanded state is invalid.", "errors.unknown-action": "This term operation is not supported.", "errors.invalid-session": "The session identifier is missing.", "errors.session-mismatch": "You cannot modify another session’s term library.", "errors.invalid-request": "The term request is invalid.", "errors.operation-failed": "The term operation failed. Try again." }, "zh": { "terms": "术语", "add": "新增", "manage": "管理", "expand": "展开术语", "collapse": "收起术语", "search": "搜索术语和备注", "name": "术语", "note": "备注", "color": "文字颜色", "defaultColor": "默认颜色", "colorPreview": "预览", "colorPicker": "颜色选择器", "closeColorPicker": "关闭颜色选择器", "customColor": "自定义颜色", "colorHue": "色相", "colorSaturation": "饱和度", "colorValue": "明度", "colorRed": "红色", "colorGreen": "绿色", "colorBlue": "蓝色", "colorRedValue": "红色数值", "colorGreenValue": "绿色数值", "colorBlueValue": "蓝色数值", "colorHex": "十六进制", "colorHexInvalid": "请输入六位十六进制颜色，例如 #2868B4。", "noNote": "暂无备注", "managerEmpty": "您还没有添加术语哦~", "noResults": "没有匹配的术语", "edit": "编辑", "remove": "删除", "multiSelect": "多选", "exitMultiSelect": "退出多选", "selectAll": "全选", "deselectAll": "取消全选", "selectTerm": "选中", "deselectTerm": "取消选中", "selected": "已选", "deleteSelected": "删除所选术语", "deleteSelectedTitle": "删除所选术语？", "deleteSelectedDetail": "所选术语及备注将被删除，此操作无法撤销。", "confirmDelete": "确认删除", "editorConflict": "该术语已在其他位置修改，草稿已保留。请载入最新内容后重新编辑。", "editorMissing": "该术语已被删除。载入最新内容后，可将保留的草稿另存为新术语。", "reloadLatest": "载入最新内容", "noRemainingSelection": "所选术语均已不存在。", "clear": "清空术语库", "clearTitle": "清空当前会话的术语库？", "clearDetail": "全部术语和备注都将被删除，此操作无法撤销。", "cancel": "取消", "save": "保存", "close": "关闭", "addTitle": "新增术语", "editTitle": "编辑术语", "manageTitle": "会话术语库", "required": "请输入术语名称", "duplicate": "已打开同名术语，原备注已保留", "deleted": "术语已删除", "undo": "撤销", "loading": "正在读取术语", "retry": "重试", "transport": "术语服务尚未连接", "failed": "术语操作失败", "invalid": "术语服务返回了无效数据", "insertFailed": "未能插入术语，草稿已保留。请重新选择插入位置后重试。", "quoteText": "引用文本", "pin": "收录为术语", "selectionExpired": "选区已失效，请重新选择文字", "drag": "拖动调整术语顺序", "busy": "正在保存", "total": "术语总数", "errors.invalid-name": "请填写术语名称。", "errors.invalid-note": "备注必须是文字。", "errors.invalid-color": "请选择有效的颜色。", "errors.duplicate-name": "该名称已存在，请编辑原词条。", "errors.missing-term": "词条已被删除，请刷新后重试。", "errors.conflict": "术语库已在其他窗口更新，请刷新后重试。", "errors.invalid-restore": "无法恢复该词条。", "errors.duplicate-id": "词条已恢复。", "errors.invalid-selection": "请选择有效的术语后重试。", "errors.invalid-order": "词条列表已变化，请刷新后重新排序。", "errors.invalid-expanded": "展开状态无效。", "errors.unknown-action": "不支持的术语操作。", "errors.invalid-session": "缺少会话标识。", "errors.session-mismatch": "不能操作其他会话的术语库。", "errors.invalid-request": "术语请求格式无效。", "errors.operation-failed": "术语操作失败，请重试。" } }, "errorCodes": ["conflict", "duplicate-id", "duplicate-name", "invalid-color", "invalid-expanded", "invalid-name", "invalid-note", "invalid-order", "invalid-request", "invalid-restore", "invalid-selection", "invalid-session", "missing-term", "operation-failed", "session-mismatch", "unknown-action"] };
+  var session_terms_locales_default = { "dictionaries": { "en": { "terms": "Terms", "add": "Add", "manage": "Manage", "expand": "Expand terms", "collapse": "Collapse terms", "search": "Search terms and notes", "name": "Term", "note": "Note", "color": "Text color", "defaultColor": "Default color", "colorPreview": "Preview", "colorPicker": "Color picker", "colorPresets": "Preset colors", "colorSaturationValue": "Saturation and value", "colorSvKeyboard": "Use Left and Right to adjust saturation, Up and Down to adjust value. Hold Shift for larger steps.", "closeColorPicker": "Close color picker", "customColor": "Custom color", "colorHue": "Hue", "colorSaturation": "Saturation", "colorValue": "Value", "colorRed": "Red", "colorGreen": "Green", "colorBlue": "Blue", "colorRedValue": "Red value", "colorGreenValue": "Green value", "colorBlueValue": "Blue value", "colorHex": "Hex", "colorHexInvalid": "Enter six hexadecimal digits, such as #2868B4.", "noNote": "No note", "managerEmpty": "You haven’t added any terms yet~", "noResults": "No matching terms", "edit": "Edit", "remove": "Delete", "multiSelect": "Select multiple", "exitMultiSelect": "Exit selection mode", "selectAll": "Select all", "deselectAll": "Deselect all", "selectTerm": "Select", "deselectTerm": "Deselect", "selected": "Selected:", "deleteSelected": "Delete selected terms", "deleteSelectedTitle": "Delete selected terms?", "deleteSelectedDetail": "The selected terms and their notes will be deleted. This cannot be undone.", "confirmDelete": "Confirm deletion", "editorConflict": "This term changed elsewhere. Your draft is kept. Load the latest content before editing again.", "editorMissing": "This term was deleted. Load the latest content to save your retained draft as a new term.", "reloadLatest": "Load latest content", "noRemainingSelection": "No selected terms remain.", "clear": "Clear term library", "clearTitle": "Clear this session’s term library?", "clearDetail": "All terms and notes will be deleted. This cannot be undone.", "cancel": "Cancel", "save": "Save", "close": "Close", "addTitle": "Add term", "editTitle": "Edit term", "manageTitle": "Session term library", "required": "Enter a term name", "duplicate": "Opened the existing term and kept its note", "deleted": "Term deleted", "undo": "Undo", "loading": "Loading terms", "retry": "Retry", "transport": "The term service is not connected", "failed": "The term operation failed", "invalid": "The term service returned invalid data", "insertFailed": "The term could not be inserted. Your draft is unchanged. Choose an insertion point and try again.", "quoteText": "Quote text", "pin": "Save as term", "selectionExpired": "The selection expired. Select the text again.", "drag": "Drag to reorder terms", "busy": "Saving", "total": "Total terms", "errors.invalid-name": "Enter a term name.", "errors.invalid-note": "The note must be text.", "errors.invalid-color": "Choose a valid color.", "errors.duplicate-name": "This name already exists. Edit the existing term.", "errors.missing-term": "This term was deleted. Refresh and try again.", "errors.conflict": "The term library changed in another window. Refresh and try again.", "errors.invalid-restore": "This term cannot be restored.", "errors.duplicate-id": "This term has already been restored.", "errors.invalid-selection": "Select one or more valid terms and try again.", "errors.invalid-order": "The term list changed. Refresh before reordering.", "errors.invalid-expanded": "The expanded state is invalid.", "errors.unknown-action": "This term operation is not supported.", "errors.invalid-session": "The session identifier is missing.", "errors.session-mismatch": "You cannot modify another session’s term library.", "errors.invalid-request": "The term request is invalid.", "errors.operation-failed": "The term operation failed. Try again." }, "zh": { "terms": "术语", "add": "新增", "manage": "管理", "expand": "展开术语", "collapse": "收起术语", "search": "搜索术语和备注", "name": "术语", "note": "备注", "color": "文字颜色", "defaultColor": "默认颜色", "colorPreview": "预览", "colorPicker": "颜色选择器", "colorPresets": "预设颜色", "colorSaturationValue": "饱和度与明度", "colorSvKeyboard": "左右方向键调整饱和度，上下方向键调整明度，按住 Shift 可加大步幅。", "closeColorPicker": "关闭颜色选择器", "customColor": "自定义颜色", "colorHue": "色相", "colorSaturation": "饱和度", "colorValue": "明度", "colorRed": "红色", "colorGreen": "绿色", "colorBlue": "蓝色", "colorRedValue": "红色数值", "colorGreenValue": "绿色数值", "colorBlueValue": "蓝色数值", "colorHex": "十六进制", "colorHexInvalid": "请输入六位十六进制颜色，例如 #2868B4。", "noNote": "暂无备注", "managerEmpty": "您还没有添加术语哦~", "noResults": "没有匹配的术语", "edit": "编辑", "remove": "删除", "multiSelect": "多选", "exitMultiSelect": "退出多选", "selectAll": "全选", "deselectAll": "取消全选", "selectTerm": "选中", "deselectTerm": "取消选中", "selected": "已选", "deleteSelected": "删除所选术语", "deleteSelectedTitle": "删除所选术语？", "deleteSelectedDetail": "所选术语及备注将被删除，此操作无法撤销。", "confirmDelete": "确认删除", "editorConflict": "该术语已在其他位置修改，草稿已保留。请载入最新内容后重新编辑。", "editorMissing": "该术语已被删除。载入最新内容后，可将保留的草稿另存为新术语。", "reloadLatest": "载入最新内容", "noRemainingSelection": "所选术语均已不存在。", "clear": "清空术语库", "clearTitle": "清空当前会话的术语库？", "clearDetail": "全部术语和备注都将被删除，此操作无法撤销。", "cancel": "取消", "save": "保存", "close": "关闭", "addTitle": "新增术语", "editTitle": "编辑术语", "manageTitle": "会话术语库", "required": "请输入术语名称", "duplicate": "已打开同名术语，原备注已保留", "deleted": "术语已删除", "undo": "撤销", "loading": "正在读取术语", "retry": "重试", "transport": "术语服务尚未连接", "failed": "术语操作失败", "invalid": "术语服务返回了无效数据", "insertFailed": "未能插入术语，草稿已保留。请重新选择插入位置后重试。", "quoteText": "引用文本", "pin": "收录为术语", "selectionExpired": "选区已失效，请重新选择文字", "drag": "拖动调整术语顺序", "busy": "正在保存", "total": "术语总数", "errors.invalid-name": "请填写术语名称。", "errors.invalid-note": "备注必须是文字。", "errors.invalid-color": "请选择有效的颜色。", "errors.duplicate-name": "该名称已存在，请编辑原词条。", "errors.missing-term": "词条已被删除，请刷新后重试。", "errors.conflict": "术语库已在其他窗口更新，请刷新后重试。", "errors.invalid-restore": "无法恢复该词条。", "errors.duplicate-id": "词条已恢复。", "errors.invalid-selection": "请选择有效的术语后重试。", "errors.invalid-order": "词条列表已变化，请刷新后重新排序。", "errors.invalid-expanded": "展开状态无效。", "errors.unknown-action": "不支持的术语操作。", "errors.invalid-session": "缺少会话标识。", "errors.session-mismatch": "不能操作其他会话的术语库。", "errors.invalid-request": "术语请求格式无效。", "errors.operation-failed": "术语操作失败，请重试。" } }, "errorCodes": ["conflict", "duplicate-id", "duplicate-name", "invalid-color", "invalid-expanded", "invalid-name", "invalid-note", "invalid-order", "invalid-request", "invalid-restore", "invalid-selection", "invalid-session", "missing-term", "operation-failed", "session-mismatch", "unknown-action"] };
 
   // src/client/styles.css
-  var styles_default = ".st-root,\n.st-dialog,\n.st-tip,\n.st-pin {\n  font-family: var(--dsw-font-family, inherit);\n  font-size: 13px;\n  line-height: 1.5;\n  color: var(--dsw-alias-label-primary);\n}\n\n.st-root *,\n.st-dialog * {\n  box-sizing: border-box;\n}\n\n.st-root {\n  box-sizing: border-box;\n  width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px));\n  max-width: var(--dsh-composer-card-max-width, 748px);\n  margin: 0 auto;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 4px 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 10px;\n  overflow: hidden;\n}\n\n.st-root[data-expanded='true'] {\n  max-height: min(20vh, 160px);\n}\n\n.st-head {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex-shrink: 0;\n}\n\n.st-title {\n  font-weight: 600;\n  white-space: nowrap;\n}\n\n.st-count {\n  font-variant-numeric: tabular-nums;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-spacer {\n  flex: 1;\n}\n\n.st-collapsed {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  gap: 5px;\n  overflow-x: auto;\n  overflow-y: hidden;\n  white-space: nowrap;\n  max-height: 28px;\n  scrollbar-width: none;\n}\n\n.st-collapsed::-webkit-scrollbar {\n  display: none;\n}\n\n.st-grid {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 5px;\n  align-content: flex-start;\n  min-height: 0;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-root[data-expanded='true'] .st-grid {\n  flex: 1;\n}\n\n.st-chipwrap {\n  display: inline-flex;\n  flex-shrink: 0;\n  max-width: 100%;\n}\n\n.st-btn,\n.st-chip {\n  font: inherit;\n  color: inherit;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: pointer;\n  border-radius: 6px;\n  min-height: 28px;\n  padding: 3px 8px;\n  white-space: nowrap;\n}\n\n.st-btn:hover,\n.st-chip:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-chip {\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  background: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l2);\n}\n\n.st-btn:disabled,\n.st-chip:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-btn:focus-visible,\n.st-chip:focus-visible,\n.st-field:focus-visible,\n.st-tip:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 2px;\n}\n\n.st-primary {\n  background: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.st-primary:hover {\n  filter: brightness(0.95);\n  background: var(--dsw-alias-state-business-primary);\n}\n\n.st-danger {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-field {\n  font: inherit;\n  line-height: 1.5;\n  min-width: 0;\n  width: 100%;\n  padding: 7px 9px;\n  color: inherit;\n  background: var(--dsw-alias-bg-base);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 7px;\n}\n\n.st-search {\n  padding: 3px 8px;\n  flex-shrink: 0;\n}\n\n.st-muted {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-status {\n  margin: 0;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  flex: 1;\n}\n\n.st-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-sr {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n}\n\n.st-dialog {\n  box-sizing: border-box;\n  position: fixed;\n  inset: 0;\n  margin: auto;\n  padding: 0;\n  width: min(600px, calc(100vw - 40px));\n  height: fit-content;\n  max-height: calc(100dvh - 40px);\n  overflow: auto;\n  overscroll-behavior: contain;\n  z-index: 100;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 14px;\n  background: Canvas;\n  background-color: rgb(from var(--dsw-alias-bg-layer-1) r g b / 1);\n  opacity: 1;\n  backdrop-filter: none;\n}\n\n.st-dialog::backdrop {\n  background: transparent;\n  backdrop-filter: none;\n}\n\n.st-dialog-head {\n  position: sticky;\n  top: 0;\n  background: var(--dsw-alias-bg-layer-1);\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  padding: 14px 18px;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  z-index: 1;\n}\n\n.st-dialog h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  flex: 1;\n}\n\n.st-body {\n  padding: 16px 18px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.st-label {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-weight: 500;\n}\n\n.st-label textarea {\n  resize: vertical;\n  min-height: 130px;\n  white-space: pre-wrap;\n}\n\n.st-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.st-tools {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.st-tools .st-field {\n  flex: 1;\n  min-width: 150px;\n}\n\n.st-list {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 45vh;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  padding: 10px 0;\n}\n\n.st-row-main {\n  flex: 1;\n  min-width: 0;\n}\n\n.st-row-name {\n  font-weight: 600;\n  overflow-wrap: anywhere;\n}\n\n.st-row-note {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 4.5em;\n  overflow: hidden;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-row-actions {\n  display: flex;\n  gap: 2px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n}\n\n.st-tip {\n  box-sizing: border-box;\n  position: fixed;\n  inset: auto;\n  margin: 0;\n  width: min(360px, calc(100vw - 24px));\n  max-height: min(240px, 40vh);\n  overflow: auto;\n  overscroll-behavior: contain;\n  padding: 10px 12px;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n}\n\n.st-tip:not(:popover-open) {\n  display: none;\n}\n\n.st-notice {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  min-width: 0;\n}\n\n.st-pin {\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  padding: 4px;\n}\n\n.st-pin .st-btn {\n  min-height: 32px;\n}\n\n@media (pointer: coarse) {\n  .st-btn,\n  .st-chip {\n    min-height: 44px;\n  }\n\n  .st-collapsed {\n    max-height: 44px;\n  }\n\n  .st-field {\n    font-size: 16px;\n  }\n\n  .st-root[data-expanded='true'] {\n    gap: 2px;\n    padding-block: 2px;\n  }\n\n  .st-root[data-expanded='true'] .st-head .st-btn {\n    min-height: 28px;\n  }\n\n  .st-root[data-expanded='true'] .st-search {\n    padding-block: 2px;\n  }\n}\n\n@media (max-width: 480px) {\n  .st-row {\n    align-items: flex-start;\n    flex-wrap: wrap;\n  }\n\n  .st-row-actions {\n    width: 100%;\n    justify-content: flex-start;\n  }\n\n  .st-dialog-head,\n  .st-body {\n    padding: 12px;\n  }\n\n  .st-head {\n    gap: 2px;\n  }\n\n  .st-head .st-btn {\n    padding-inline: 5px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .st-root *,\n  .st-dialog * {\n    scroll-behavior: auto;\n  }\n}\n\n.st-icon-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  min-width: 28px;\n  padding: 0;\n  flex-shrink: 0;\n}\n\n.st-icon-btn svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-selection-actions {\n  display: flex;\n  align-items: center;\n  gap: 2px;\n  white-space: nowrap;\n  padding: 3px;\n  background: var(--dsw-alias-button-floating-fill);\n  border-radius: 999px;\n  box-shadow: var(--dsw-elevation-panel);\n  color: var(--dsw-alias-label-primary);\n  font: var(--dsw-font-xs-13);\n}\n\n.st-selection-actions .st-btn {\n  border-radius: 999px;\n  padding: 5px 10px;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible),\n.st-chip:hover,\n.st-chip:focus:not(:focus-visible) {\n  outline: none;\n  box-shadow: none;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible) {\n  border-color: transparent;\n}\n\n.st-dialog-wide {\n  width: min(860px, calc(100vw - 40px));\n  height: min(640px, calc(100dvh - 40px));\n  box-sizing: border-box;\n  overflow: hidden;\n}\n\n.st-dialog-wide:popover-open {\n  display: flex;\n  flex-direction: column;\n}\n\n.st-dialog-wide > .st-dialog-head {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide > .st-body {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.st-dialog-wide .st-tools {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide .st-list {\n  flex: 1;\n  min-height: 0;\n  max-height: none;\n  overflow: auto;\n  margin: 0;\n}\n\n.st-dialog-wide .st-list:empty {\n  display: none;\n}\n\n.st-manager-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin: 0;\n  text-align: center;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n  opacity: 0.55;\n}\n\n.st-drag-handle {\n  cursor: grab;\n  flex: 0 0 28px;\n  padding: 4px;\n  color: var(--dsw-alias-label-secondary);\n  align-self: center;\n}\n\n.st-drag-handle:active {\n  cursor: grabbing;\n}\n\n.st-drag-handle svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-dialog-wide::backdrop {\n  background: rgb(0 0 0 / 32%);\n}\n\n.st-icon-btn[aria-pressed='true'] {\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n.st-selection-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-shrink: 0;\n  margin-top: auto;\n  padding-top: 8px;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n}\n\n.st-selection-count {\n  margin-right: auto;\n  color: var(--dsw-alias-label-secondary);\n  font-variant-numeric: tabular-nums;\n}\n\n.st-select-control {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  flex: 0 0 28px;\n  align-self: center;\n  cursor: pointer;\n}\n\n.st-select-checkbox {\n  appearance: none;\n  width: 18px;\n  height: 18px;\n  margin: 0;\n  border: 1.5px solid var(--dsw-alias-label-secondary);\n  border-radius: 50%;\n  background: transparent;\n  cursor: pointer;\n}\n\n.st-select-checkbox:checked {\n  background: var(--dsw-alias-state-business-primary);\n  border-color: var(--dsw-alias-state-business-primary);\n}\n\n.st-select-checkbox:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-select-checkbox:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-select-control svg {\n  position: absolute;\n  pointer-events: none;\n  color: var(--dsw-alias-label-primary-foreground);\n  visibility: hidden;\n}\n\n.st-select-checkbox:checked + svg {\n  visibility: visible;\n}\n\n.st-color-row {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 10px;\n  margin-top: 14px;\n}\n\n.st-color-label {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-color-button {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  height: 30px;\n  padding: 4px 6px;\n  color: inherit;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 5px;\n  background: var(--dsw-alias-bg-layer-2, Canvas);\n  cursor: pointer;\n}\n\n.st-color-button:hover:not(:disabled),\n.st-color-button[aria-expanded='true'] {\n  border-color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-color-button:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-color-swatch {\n  display: block;\n  width: 30px;\n  height: 18px;\n  border: 1px solid rgb(128 128 128 / 55%);\n  border-radius: 2px;\n}\n\n.st-color-chevron {\n  font-size: 11px;\n}\n\n.st-color-button:focus-visible,\n.st-color-range:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-color-default[aria-pressed='true'] {\n  border-color: var(--dsw-alias-border-l1);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-color-preview {\n  flex: 1 1 100px;\n  min-width: 0;\n  overflow-wrap: anywhere;\n}\n\n.st-color-popover {\n  box-sizing: border-box;\n  position: fixed;\n  inset: auto;\n  margin: 0;\n  width: min(280px, calc(100vw - 24px));\n  max-height: calc(100dvh - 24px);\n  overflow: auto;\n  overscroll-behavior: contain;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 10px 12px;\n  color: var(--dsw-alias-label-primary, CanvasText);\n  background: Canvas;\n  background-color: rgb(from var(--dsw-alias-bg-layer-1) r g b / 1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 7px;\n  box-shadow: 0 4px 18px rgb(0 0 0 / 22%);\n  font: inherit;\n}\n\n.st-color-popover:not(:popover-open) {\n  display: none;\n}\n\n.st-color-picker-head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n}\n\n.st-color-picker-head strong {\n  font-weight: 600;\n}\n\n.st-color-close {\n  min-height: 24px;\n  min-width: 24px;\n  padding: 0 4px;\n  font-size: 20px;\n  line-height: 1;\n}\n\n.st-color-sv {\n  position: relative;\n  width: 100%;\n  aspect-ratio: 1;\n  flex-shrink: 0;\n  border: 1px solid rgb(128 128 128 / 55%);\n  border-radius: 2px;\n  background-image:\n    linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);\n  touch-action: none;\n  user-select: none;\n  cursor: crosshair;\n}\n\n.st-color-sv-cursor {\n  position: absolute;\n  width: 10px;\n  height: 10px;\n  border: 2px solid #fff;\n  border-radius: 50%;\n  box-shadow: 0 0 0 1px #000;\n  transform: translate(-50%, -50%);\n  pointer-events: none;\n}\n\n.st-color-hue-label,\n.st-color-hex-label {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n}\n\n.st-color-range {\n  appearance: none;\n  min-width: 0;\n  width: 100%;\n  height: 12px;\n  margin: 4px 0;\n  border: 1px solid rgb(128 128 128 / 65%);\n  border-radius: 2px;\n  cursor: pointer;\n  flex: 1;\n}\n\n.st-color-hue {\n  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);\n}\n\n.st-color-range::-webkit-slider-thumb {\n  appearance: none;\n  width: 9px;\n  height: 18px;\n  background: #fff;\n  border: 1px solid #222;\n  border-radius: 2px;\n  box-shadow: 0 0 0 1px #fff;\n}\n\n.st-color-range::-moz-range-thumb {\n  width: 7px;\n  height: 16px;\n  background: #fff;\n  border: 1px solid #222;\n  border-radius: 2px;\n  box-shadow: 0 0 0 1px #fff;\n}\n\n.st-color-percentages {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  gap: 12px;\n}\n\n.st-color-percentage {\n  display: flex;\n  flex-direction: column;\n  gap: 3px;\n  font-size: 12px;\n}\n\n.st-color-percentage > span {\n  display: flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.st-color-channels {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n}\n\n.st-color-channel {\n  display: grid;\n  grid-template-columns: 12px minmax(0, 1fr) 60px;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n}\n\n.st-color-number {\n  width: 60px;\n  padding: 2px 4px;\n  border-radius: 3px;\n  font-variant-numeric: tabular-nums;\n}\n\n.st-color-hex {\n  flex: 1;\n  padding: 3px 6px;\n  border-radius: 3px;\n  font-variant-numeric: tabular-nums;\n}\n\n.st-color-hex[aria-invalid='true'] {\n  border-color: var(--dsw-alias-state-error-primary);\n}\n\n.st-color-hex-error,\n.st-color-state {\n  margin: 0;\n  font-size: 12px;\n}\n\n.st-color-hex-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-color-state {\n  color: var(--dsw-alias-label-secondary);\n}\n\n@media (pointer: coarse) {\n  .st-color-button,\n  .st-color-close {\n    min-height: 44px;\n    min-width: 44px;\n  }\n\n  .st-color-range {\n    height: 20px;\n    margin-block: 12px;\n  }\n\n  .st-color-number,\n  .st-color-hex {\n    min-height: 36px;\n    font-size: 16px;\n  }\n}\n";
+  var styles_default = ".st-root,\n.st-dialog,\n.st-tip,\n.st-pin {\n  font-family: var(--dsw-font-family, inherit);\n  font-size: 13px;\n  line-height: 1.5;\n  color: var(--dsw-alias-label-primary);\n}\n\n.st-root *,\n.st-dialog * {\n  box-sizing: border-box;\n}\n\n.st-root {\n  box-sizing: border-box;\n  width: calc(100% - 2 * var(--dsh-composer-side-clearance, 16px));\n  max-width: var(--dsh-composer-card-max-width, 748px);\n  margin: 0 auto;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  padding: 4px 8px;\n  background: var(--dsw-alias-bg-layer-1);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 10px;\n  overflow: hidden;\n}\n\n.st-root[data-expanded='true'] {\n  max-height: min(20vh, 160px);\n}\n\n.st-head {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex-shrink: 0;\n}\n\n.st-title {\n  font-weight: 600;\n  white-space: nowrap;\n}\n\n.st-count {\n  font-variant-numeric: tabular-nums;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-spacer {\n  flex: 1;\n}\n\n.st-collapsed {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  gap: 5px;\n  overflow-x: auto;\n  overflow-y: hidden;\n  white-space: nowrap;\n  max-height: 28px;\n  scrollbar-width: none;\n}\n\n.st-collapsed::-webkit-scrollbar {\n  display: none;\n}\n\n.st-grid {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 5px;\n  align-content: flex-start;\n  min-height: 0;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-root[data-expanded='true'] .st-grid {\n  flex: 1;\n}\n\n.st-chipwrap {\n  display: inline-flex;\n  flex-shrink: 0;\n  max-width: 100%;\n}\n\n.st-btn,\n.st-chip {\n  font: inherit;\n  color: inherit;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: pointer;\n  border-radius: 6px;\n  min-height: 28px;\n  padding: 3px 8px;\n  white-space: nowrap;\n}\n\n.st-btn:hover,\n.st-chip:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-chip {\n  max-width: 100%;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  background: var(--dsw-alias-bg-layer-2);\n  border-color: var(--dsw-alias-border-l2);\n}\n\n.st-btn:disabled,\n.st-chip:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-btn:focus-visible,\n.st-chip:focus-visible,\n.st-field:focus-visible,\n.st-tip:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 2px;\n}\n\n.st-primary {\n  background: var(--dsw-alias-state-business-primary);\n  color: var(--dsw-alias-label-primary-foreground);\n}\n\n.st-primary:hover {\n  filter: brightness(0.95);\n  background: var(--dsw-alias-state-business-primary);\n}\n\n.st-danger {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-field {\n  font: inherit;\n  line-height: 1.5;\n  min-width: 0;\n  width: 100%;\n  padding: 7px 9px;\n  color: inherit;\n  background: var(--dsw-alias-bg-base);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 7px;\n}\n\n.st-search {\n  padding: 3px 8px;\n  flex-shrink: 0;\n}\n\n.st-muted {\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-status {\n  margin: 0;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  flex: 1;\n}\n\n.st-error {\n  color: var(--dsw-alias-state-error-primary);\n}\n\n.st-sr {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  overflow: hidden;\n  clip-path: inset(50%);\n  white-space: nowrap;\n}\n\n.st-dialog {\n  box-sizing: border-box;\n  position: fixed;\n  inset: 0;\n  margin: auto;\n  padding: 0;\n  width: min(600px, calc(100vw - 40px));\n  height: fit-content;\n  max-height: calc(100dvh - 40px);\n  overflow: auto;\n  overscroll-behavior: contain;\n  z-index: 100;\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 14px;\n  background: Canvas;\n  background-color: rgb(from var(--dsw-alias-bg-layer-1) r g b / 1);\n  opacity: 1;\n  backdrop-filter: none;\n}\n\n.st-dialog::backdrop {\n  background: transparent;\n  backdrop-filter: none;\n}\n\n.st-dialog-head {\n  position: sticky;\n  top: 0;\n  background: var(--dsw-alias-bg-layer-1);\n  display: flex;\n  align-items: center;\n  gap: 12px;\n  padding: 14px 18px;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  z-index: 1;\n}\n\n.st-dialog h2 {\n  margin: 0;\n  font-size: 16px;\n  font-weight: 600;\n  flex: 1;\n}\n\n.st-body {\n  padding: 16px 18px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.st-label {\n  display: flex;\n  flex-direction: column;\n  gap: 5px;\n  font-weight: 500;\n}\n\n.st-label textarea {\n  resize: vertical;\n  min-height: 130px;\n  white-space: pre-wrap;\n}\n\n.st-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n\n.st-tools {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;\n}\n\n.st-tools .st-field {\n  flex: 1;\n  min-width: 150px;\n}\n\n.st-list {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 45vh;\n  overflow: auto;\n  overscroll-behavior: contain;\n}\n\n.st-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  border-bottom: 1px solid var(--dsw-alias-border-l2);\n  padding: 10px 0;\n}\n\n.st-row-main {\n  flex: 1;\n  min-width: 0;\n}\n\n.st-row-name {\n  font-weight: 600;\n  overflow-wrap: anywhere;\n}\n\n.st-row-note {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 4.5em;\n  overflow: hidden;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-row-actions {\n  display: flex;\n  gap: 2px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n}\n\n.st-tip {\n  box-sizing: border-box;\n  position: fixed;\n  inset: auto;\n  margin: 0;\n  width: min(360px, calc(100vw - 24px));\n  max-height: min(240px, 40vh);\n  overflow: auto;\n  overscroll-behavior: contain;\n  padding: 10px 12px;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  border-radius: 8px;\n}\n\n.st-tip:not(:popover-open) {\n  display: none;\n}\n\n.st-notice {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  min-width: 0;\n}\n\n.st-pin {\n  border-radius: 8px;\n  background: var(--dsw-alias-bg-layer-2);\n  border: 1px solid var(--dsw-alias-border-l2);\n  padding: 4px;\n}\n\n.st-pin .st-btn {\n  min-height: 32px;\n}\n\n@media (pointer: coarse) {\n  .st-btn,\n  .st-chip {\n    min-height: 44px;\n  }\n\n  .st-collapsed {\n    max-height: 44px;\n  }\n\n  .st-field {\n    font-size: 16px;\n  }\n\n  .st-root[data-expanded='true'] {\n    gap: 2px;\n    padding-block: 2px;\n  }\n\n  .st-root[data-expanded='true'] .st-head .st-btn {\n    min-height: 28px;\n  }\n\n  .st-root[data-expanded='true'] .st-search {\n    padding-block: 2px;\n  }\n}\n\n@media (max-width: 480px) {\n  .st-row {\n    align-items: flex-start;\n    flex-wrap: wrap;\n  }\n\n  .st-row-actions {\n    width: 100%;\n    justify-content: flex-start;\n  }\n\n  .st-dialog-head,\n  .st-body {\n    padding: 12px;\n  }\n\n  .st-head {\n    gap: 2px;\n  }\n\n  .st-head .st-btn {\n    padding-inline: 5px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .st-root *,\n  .st-dialog * {\n    scroll-behavior: auto;\n  }\n}\n\n.st-icon-btn {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  min-width: 28px;\n  padding: 0;\n  flex-shrink: 0;\n}\n\n.st-icon-btn svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-selection-actions {\n  display: flex;\n  align-items: center;\n  gap: 2px;\n  white-space: nowrap;\n  padding: 3px;\n  background: var(--dsw-alias-button-floating-fill);\n  border-radius: 999px;\n  box-shadow: var(--dsw-elevation-panel);\n  color: var(--dsw-alias-label-primary);\n  font: var(--dsw-font-xs-13);\n}\n\n.st-selection-actions .st-btn {\n  border-radius: 999px;\n  padding: 5px 10px;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible),\n.st-chip:hover,\n.st-chip:focus:not(:focus-visible) {\n  outline: none;\n  box-shadow: none;\n}\n\n.st-btn:hover,\n.st-btn:focus:not(:focus-visible) {\n  border-color: transparent;\n}\n\n.st-dialog-wide {\n  width: min(860px, calc(100vw - 40px));\n  height: min(640px, calc(100dvh - 40px));\n  box-sizing: border-box;\n  overflow: hidden;\n}\n\n.st-dialog-wide:popover-open {\n  display: flex;\n  flex-direction: column;\n}\n\n.st-dialog-wide > .st-dialog-head {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide > .st-body {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.st-dialog-wide .st-tools {\n  flex-shrink: 0;\n}\n\n.st-dialog-wide .st-list {\n  flex: 1;\n  min-height: 0;\n  max-height: none;\n  overflow: auto;\n  margin: 0;\n}\n\n.st-dialog-wide .st-list:empty {\n  display: none;\n}\n\n.st-manager-empty {\n  flex: 1;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin: 0;\n  text-align: center;\n  font-size: 12px;\n  color: var(--dsw-alias-label-secondary);\n  opacity: 0.55;\n}\n\n.st-drag-handle {\n  cursor: grab;\n  flex: 0 0 28px;\n  padding: 4px;\n  color: var(--dsw-alias-label-secondary);\n  align-self: center;\n}\n\n.st-drag-handle:active {\n  cursor: grabbing;\n}\n\n.st-drag-handle svg {\n  display: block;\n  pointer-events: none;\n}\n\n.st-dialog-wide::backdrop {\n  background: rgb(0 0 0 / 32%);\n}\n\n.st-icon-btn[aria-pressed='true'] {\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-state-business-primary);\n}\n\n.st-selection-footer {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 8px;\n  flex-shrink: 0;\n  margin-top: auto;\n  padding-top: 8px;\n  border-top: 1px solid var(--dsw-alias-border-l2);\n}\n\n.st-selection-count {\n  margin-right: auto;\n  color: var(--dsw-alias-label-secondary);\n  font-variant-numeric: tabular-nums;\n}\n\n.st-select-control {\n  position: relative;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 28px;\n  height: 28px;\n  flex: 0 0 28px;\n  align-self: center;\n  cursor: pointer;\n}\n\n.st-select-checkbox {\n  appearance: none;\n  width: 18px;\n  height: 18px;\n  margin: 0;\n  border: 1.5px solid var(--dsw-alias-label-secondary);\n  border-radius: 50%;\n  background: transparent;\n  cursor: pointer;\n}\n\n.st-select-checkbox:checked {\n  background: var(--dsw-alias-state-business-primary);\n  border-color: var(--dsw-alias-state-business-primary);\n}\n\n.st-select-checkbox:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-select-checkbox:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-select-control svg {\n  position: absolute;\n  pointer-events: none;\n  color: var(--dsw-alias-label-primary-foreground);\n  visibility: hidden;\n}\n\n.st-select-checkbox:checked + svg {\n  visibility: visible;\n}\n\n.st-color-row {\n  display: flex;\n  align-items: center;\n  flex-wrap: wrap;\n  gap: 10px;\n  margin-top: 14px;\n}\n\n.st-color-label {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n  color: var(--dsw-alias-label-secondary);\n}\n\n.st-color-button {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  height: 30px;\n  padding: 4px 6px;\n  color: inherit;\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 5px;\n  background: var(--dsw-alias-bg-layer-2, Canvas);\n  cursor: pointer;\n}\n\n.st-color-button:hover:not(:disabled),\n.st-color-button[aria-expanded='true'] {\n  border-color: var(--dsw-alias-label-secondary);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-color-button:disabled {\n  opacity: 0.5;\n  cursor: default;\n}\n\n.st-color-swatch {\n  display: block;\n  width: 30px;\n  height: 18px;\n  border: 1px solid rgb(128 128 128 / 55%);\n  border-radius: 2px;\n}\n\n.st-color-chevron {\n  font-size: 11px;\n}\n\n.st-color-button:focus-visible,\n.st-color-range:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 3px;\n}\n\n.st-color-default[aria-pressed='true'] {\n  border-color: var(--dsw-alias-border-l1);\n  background: var(--dsw-alias-interactive-bg-hover);\n}\n\n.st-color-preview {\n  flex: 1 1 100px;\n  min-width: 0;\n  overflow-wrap: anywhere;\n}\n\n.st-color-popover {\n  box-sizing: border-box;\n  position: fixed;\n  inset: auto;\n  margin: 0;\n  width: min(280px, calc(100vw - 24px));\n  max-height: calc(100dvh - 24px);\n  overflow: auto;\n  overscroll-behavior: contain;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 10px 12px;\n  color: var(--dsw-alias-label-primary, CanvasText);\n  background: Canvas;\n  background-color: rgb(from var(--dsw-alias-bg-layer-1) r g b / 1);\n  border: 1px solid var(--dsw-alias-border-l1);\n  border-radius: 7px;\n  box-shadow: 0 4px 18px rgb(0 0 0 / 22%);\n  font: inherit;\n}\n\n.st-color-popover:not(:popover-open) {\n  display: none;\n}\n\n.st-color-picker-head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n}\n\n.st-color-picker-head strong {\n  font-weight: 600;\n}\n\n.st-color-close {\n  min-height: 24px;\n  min-width: 24px;\n  padding: 0 4px;\n  font-size: 20px;\n  line-height: 1;\n}\n\n.st-color-sv {\n  position: relative;\n  width: 100%;\n  aspect-ratio: 1;\n  flex-shrink: 0;\n  border: 1px solid rgb(128 128 128 / 55%);\n  border-radius: 2px;\n  background-image:\n    linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);\n  touch-action: none;\n  user-select: none;\n  cursor: crosshair;\n}\n\n.st-color-sv-cursor {\n  position: absolute;\n  width: 10px;\n  height: 10px;\n  border: 2px solid #fff;\n  border-radius: 50%;\n  box-shadow: 0 0 0 1px #000;\n  transform: translate(-50%, -50%);\n  pointer-events: none;\n}\n\n.st-color-hue-label,\n.st-color-hex-label {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n}\n\n.st-color-range {\n  appearance: none;\n  min-width: 0;\n  width: 100%;\n  height: 12px;\n  margin: 4px 0;\n  border: 1px solid rgb(128 128 128 / 65%);\n  border-radius: 2px;\n  cursor: pointer;\n  flex: 1;\n}\n\n.st-color-hue {\n  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);\n}\n\n.st-color-range::-webkit-slider-thumb {\n  appearance: none;\n  width: 9px;\n  height: 18px;\n  background: #fff;\n  border: 1px solid #222;\n  border-radius: 2px;\n  box-shadow: 0 0 0 1px #fff;\n}\n\n.st-color-range::-moz-range-thumb {\n  width: 7px;\n  height: 16px;\n  background: #fff;\n  border: 1px solid #222;\n  border-radius: 2px;\n  box-shadow: 0 0 0 1px #fff;\n}\n\n.st-color-preset-grid {\n  display: grid;\n  grid-template-columns: repeat(6, minmax(0, 1fr));\n  gap: 6px;\n}\n\n.st-color-preset {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 100%;\n  aspect-ratio: 1;\n  padding: 0;\n  border: 1px solid rgb(128 128 128 / 55%);\n  border-radius: 3px;\n  cursor: pointer;\n}\n\n.st-color-preset[aria-pressed='true'] {\n  box-shadow: 0 0 0 2px var(--dsw-alias-border-l1);\n}\n\n.st-color-preset:focus-visible,\n.st-color-custom:focus-visible,\n.st-color-sv:focus-visible {\n  outline: 2px solid var(--dsw-alias-state-business-primary);\n  outline-offset: 2px;\n}\n\n.st-color-custom {\n  align-self: flex-start;\n  padding: 2px 0;\n  border: 0;\n  border-radius: 2px;\n  color: var(--dsw-alias-label-secondary);\n  background: transparent;\n  font: inherit;\n  font-size: 12px;\n  cursor: pointer;\n}\n\n.st-color-custom:hover {\n  text-decoration: underline;\n}\n\n.st-color-channels {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n}\n\n.st-color-channel {\n  display: grid;\n  grid-template-columns: 12px minmax(0, 1fr) 60px;\n  align-items: center;\n  gap: 10px;\n  font-size: 12px;\n}\n\n.st-color-number {\n  width: 60px;\n  padding: 2px 4px;\n  border-radius: 3px;\n  font-variant-numeric: tabular-nums;\n}\n\n.st-color-hex {\n  flex: 1;\n  padding: 3px 6px;\n  border-radius: 3px;\n  font-variant-numeric: tabular-nums;\n}\n\n.st-color-hex[aria-invalid='true'] {\n  border-color: var(--dsw-alias-state-error-primary);\n}\n\n.st-color-hex-error {\n  margin: 0;\n  font-size: 12px;\n  color: var(--dsw-alias-state-error-primary);\n}\n\n@media (pointer: coarse) {\n  .st-color-palette {\n    width: min(320px, calc(100vw - 24px));\n  }\n\n  .st-color-button,\n  .st-color-close,\n  .st-color-custom {\n    min-height: 44px;\n    min-width: 44px;\n  }\n\n  .st-color-range {\n    height: 20px;\n    margin-block: 12px;\n  }\n\n  .st-color-number,\n  .st-color-hex {\n    min-height: 36px;\n    font-size: 16px;\n  }\n}\n";
 
   // src/client.js
   window.__ModuleLoader__.load({

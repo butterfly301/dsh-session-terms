@@ -35,7 +35,7 @@
 
 词条的可选 `color` 字段保存六位十六进制颜色，`null` 表示默认颜色，旧数据中的缺失值也按默认颜色处理。颜色格式由 [color.mjs](../src/color.mjs) 统一定义。颜色修改参与词条版本与并发校验，模型读取的内容仍为名称和备注。
 
-选色器提供饱和度与明度色块、色相条、RGB 数值和 Hex 输入，颜色始终不透明。默认色板与预览跟随主题正文颜色。RGB 与 HSV 的转换位于 [color-values.mjs](../src/client/color-values.mjs)。
+点击色板打开两排预设颜色，选中后应用并收起面板。左下角的“自定义颜色”打开详细选色器，提供色块、色相条、RGB 数值和 Hex 输入；方向键可调整色块的饱和度与明度。颜色始终不透明。术语编辑窗口的默认色板与预览跟随主题正文颜色。RGB 与 HSV 的转换位于 [color-values.mjs](../src/client/color-values.mjs)。
 
 [highlight.mjs](../src/client/highlight.mjs)通过 CSS Custom Highlight API 为当前会话的用户消息和 AI 回复正文着色。每段正文拥有自己的范围记录，文字变动合并后只替换受影响的范围，同一颜色复用高亮对象。空词库或全部使用默认颜色时停止观察并释放范围。卸载时释放本会话的资源。
 
