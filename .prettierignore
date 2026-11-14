@@ -1,0 +1,4 @@
+/client.js
+dist/
+node_modules/
+validation/results.json

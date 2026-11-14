@@ -1,0 +1,4 @@
+- insert:
+    - id: session-terms
+      name: '@fairyonthetree/dsh-session-terms'
+      config: {}
