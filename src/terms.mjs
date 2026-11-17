@@ -169,35 +169,45 @@ export function changeState(current, action, payload = {}) {
   return normalize(state);
 }
 
+/**
+ * Build the terms store over one storage table.
+ *
+ * The store is keyed by an opaque terms-library key, not by Session id: several
+ * Sessions of one conversation lineage address the same record. Encoding the key
+ * for the table is this module's business; callers never see the on-disk name.
+ *
+ * @param {{ get: (key: string) => unknown, put: (key: string, value: unknown) => Promise<void> }} table
+ * @returns the store used by the command, the lookup tool, and the context gate.
+ */
 export function createTermsRepository(table) {
   const queues = new Map();
-  const assertId = (sessionId) => {
-    if (typeof sessionId !== 'string' || !sessionId) throw new TermsError('invalid-session');
+  const assertKey = (key) => {
+    if (typeof key !== 'string' || !key) throw new TermsError('invalid-session');
   };
-  const keyOf = (sessionId) => Buffer.from(sessionId, 'utf8').toString('base64url');
-  const get = (sessionId) => {
-    assertId(sessionId);
-    return structuredClone(table.get(keyOf(sessionId)) ?? emptyState());
+  const recordKey = (key) => Buffer.from(key, 'utf8').toString('base64url');
+  const get = (key) => {
+    assertKey(key);
+    return structuredClone(table.get(recordKey(key)) ?? emptyState());
   };
   return {
     get,
-    async call(sessionId, action, payload = {}) {
-      assertId(sessionId);
-      if (action === 'get') return { ok: true, state: get(sessionId) };
-      const preceding = queues.get(sessionId) ?? Promise.resolve();
+    async call(key, action, payload = {}) {
+      assertKey(key);
+      if (action === 'get') return { ok: true, state: get(key) };
+      const preceding = queues.get(key) ?? Promise.resolve();
       const operation = preceding
         .catch(() => {})
         .then(async () => {
-          const before = get(sessionId);
+          const before = get(key);
           const after = changeState(before, action, payload);
-          if (after !== before) await table.put(keyOf(sessionId), after);
-          return { ok: true, state: get(sessionId) };
+          if (after !== before) await table.put(recordKey(key), after);
+          return { ok: true, state: get(key) };
         });
-      queues.set(sessionId, operation);
+      queues.set(key, operation);
       try {
         return await operation;
       } finally {
-        if (queues.get(sessionId) === operation) queues.delete(sessionId);
+        if (queues.get(key) === operation) queues.delete(key);
       }
     },
   };

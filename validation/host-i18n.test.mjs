@@ -149,11 +149,11 @@ export const z = {
 };`;
 const asModule = (source) => `data:text/javascript,${encodeURIComponent(source)}`;
 
-async function openHost(root, defaultLocale) {
+async function openHost(root, defaultLocale, openings = new Map()) {
   await mkdir(join(root, 'src'));
   await mkdir(join(root, 'locale'));
   await copyFile(new URL('../index.js', import.meta.url), join(root, 'index.mjs'));
-  for (const name of ['terms.mjs', 'color.mjs', 'matching.mjs', 'i18n.mjs'])
+  for (const name of ['terms.mjs', 'identity.mjs', 'color.mjs', 'matching.mjs', 'i18n.mjs'])
     await copyFile(new URL(`../src/${name}`, import.meta.url), join(root, 'src', name));
   await json(join(root, 'locale'), 'config', { defaultLocale });
   for (const language of ['en', 'fr', 'es'])
@@ -227,6 +227,30 @@ async function openHost(root, defaultLocale) {
         },
       },
       agents: { list: () => [agent] },
+      sessionQuery: {
+        async observeSession(sessionId) {
+          const opening = openings.get(sessionId);
+          return {
+            events:
+              opening === undefined
+                ? []
+                : [
+                    {
+                      type: 'user/message',
+                      time: opening.time,
+                      data: {
+                        source: { kind: 'user' },
+                        content: [{ type: 'text', text: opening.text }],
+                      },
+                    },
+                  ],
+            [Symbol.dispose]() {},
+          };
+        },
+      },
+      get(name) {
+        return this[name];
+      },
     },
     {
       get(target, key) {
@@ -242,6 +266,9 @@ async function openHost(root, defaultLocale) {
     section,
     agent,
     domain: host.termsDomain,
+    observe(sessionId, opening) {
+      openings.set(sessionId, opening);
+    },
     setFailure(error) {
       failure = error;
     },
@@ -406,5 +433,54 @@ test('Host returns code-only failures and never leaks error messages or storage 
       host.setFailure(error);
       assert.deepEqual(await request({ action: 'get' }), { ok: false, code: 'operation-failed' });
     }
+  });
+});
+
+test('Host shares one terms library across a conversation lineage and isolates other conversations', async () => {
+  await withFixture(async (root) => {
+    const opening = { time: 1794399990000, text: '把标题右上的图标换成调查图标' };
+    const openings = new Map([
+      ['session-A', opening],
+      ['session-fork', opening],
+      // Same text at a different moment: another conversation with its own library.
+      ['session-other', { ...opening, time: opening.time + 1 }],
+    ]);
+    const { command, agent } = await openHost(root, 'en', openings);
+    const request = async (action, payload) =>
+      JSON.parse(
+        (await command.handler({ agent, rawInput: JSON.stringify({ action, payload }) })).text,
+      );
+
+    assert.equal((await request('create', { name: 'RightUpImage' })).ok, true);
+
+    agent.session.id = 'session-fork';
+    assert.deepEqual(
+      (await request('get')).state.terms.map((term) => term.name),
+      ['RightUpImage'],
+    );
+
+    assert.equal((await request('create', { name: '闪切' })).ok, true);
+    agent.session.id = 'session-A';
+    assert.deepEqual(
+      (await request('get')).state.terms.map((term) => term.name),
+      ['RightUpImage', '闪切'],
+    );
+
+    agent.session.id = 'session-other';
+    assert.deepEqual((await request('get')).state.terms, []);
+  });
+});
+
+test('Host keeps session-scoped libraries when no conversation opening is readable', async () => {
+  await withFixture(async (root) => {
+    const { command, agent } = await openHost(root, 'en');
+    const request = async (action, payload) =>
+      JSON.parse(
+        (await command.handler({ agent, rawInput: JSON.stringify({ action, payload }) })).text,
+      );
+
+    assert.equal((await request('create', { name: 'only-here' })).ok, true);
+    agent.session.id = 'session-unreadable';
+    assert.deepEqual((await request('get')).state.terms, []);
   });
 });

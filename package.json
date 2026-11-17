@@ -1,7 +1,7 @@
 {
   "name": "@fairyonthetree/dsh-session-terms",
-  "version": "0.1.5",
-  "description": "Session-scoped terms with notes, quick insertion and read-only AI context.",
+  "version": "0.2.0",
+  "description": "Conversation-scoped terms with notes, quick insertion and read-only AI context.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -17,6 +17,7 @@
     "/index.js",
     "/client.js",
     "src/terms.mjs",
+    "src/identity.mjs",
     "src/color.mjs",
     "src/matching.mjs",
     "src/context.mjs",
