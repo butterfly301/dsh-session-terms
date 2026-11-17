@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { matchTerms, renderTerm, SOURCE_KIND, LOOKUP_TOOL } from './terms.mjs';
+import { matchTerms, renderContext, SOURCE_KIND, LOOKUP_TOOL } from './terms.mjs';
 
 // Version-bound admission integration, verified against DSH 0.2.2-rc.3.
 // There is no public final-admission event. agent.inject() queues a later step
@@ -17,7 +17,8 @@ export function installContextGate(agent, getTerms) {
   const makeMessage = (term) => ({
     id: randomUUID(),
     role: 'user',
-    source: { kind: SOURCE_KIND },
+    // The term id lives here, outside the model-facing content.
+    source: { kind: SOURCE_KIND, termId: term.id },
     content: [{ type: 'text', text: entryText(term) }],
   });
   const textOf = (message) =>
@@ -25,8 +26,26 @@ export function installContextGate(agent, getTerms) {
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
       .join('\n');
-  const entryText = renderTerm;
-  const hasTerm = (messages, text) => {
+  const entryText = renderContext;
+  // Entries written before the source carried an id keep their identity in the
+  // JSON payload; lookup results do the same. Both are read by field.
+  const entryOf = (text) => {
+    try {
+      const entry = JSON.parse(text);
+      if (entry === null || typeof entry !== 'object') return undefined;
+      if (typeof entry.id !== 'string') return undefined;
+      if (typeof entry.name !== 'string' || typeof entry.note !== 'string') return undefined;
+      return entry;
+    } catch {
+      return undefined;
+    }
+  };
+  const sameEntry = (entry, term) => entry.name === term.name && entry.note === term.note;
+  // Whether the current version of one term is already present in the effective
+  // context. Compare the latest entry for this term so reverting a note also
+  // supersedes newer context, without exposing revision metadata to the model.
+  const hasTerm = (messages, term) => {
+    const text = entryText(term);
     const lookupCalls = new Set(
       messages.flatMap((message) =>
         message.role === 'assistant'
@@ -36,24 +55,25 @@ export function installContextGate(agent, getTerms) {
           : [],
       ),
     );
-    const id = JSON.parse(text).id;
-    // Compare the latest complete entry for this id so reverting a note also
-    // supersedes newer context, without exposing revision metadata to the model.
     for (const message of messages.toReversed()) {
-      const owned = message.source?.kind === SOURCE_KIND;
+      if (message.source?.kind === SOURCE_KIND) {
+        const owned = message.source.termId;
+        if (owned !== undefined) {
+          if (owned !== term.id) continue;
+          return textOf(message) === text;
+        }
+        const entry = entryOf(textOf(message));
+        if (entry?.id !== term.id) continue;
+        return sameEntry(entry, term);
+      }
       const queried =
         message.role === 'tool' && !message.isError && lookupCalls.has(message.toolCallId);
-      if (!owned && !queried) continue;
+      if (!queried) continue;
       for (const block of message.content.toReversed()) {
         if (block.type !== 'text') continue;
-        try {
-          const entry = JSON.parse(block.text);
-          if (entry?.id !== id || typeof entry.name !== 'string' || typeof entry.note !== 'string')
-            continue;
-          return renderTerm(entry) === text;
-        } catch {
-          /* Pruned or incomplete results do not prove presence. */
-        }
+        const entry = entryOf(block.text);
+        if (entry?.id !== term.id) continue;
+        return sameEntry(entry, term);
       }
     }
     return false;
@@ -80,10 +100,9 @@ export function installContextGate(agent, getTerms) {
       const existing = agent.session.deriveMessages();
       const additions = [];
       for (const term of stepTerms) {
-        const text = entryText(term);
-        if (hasTerm(existing, text)) continue;
+        if (hasTerm(existing, term)) continue;
         const message = makeMessage(term);
-        pending.set(message.id, text);
+        pending.set(message.id, term.id);
         additions.push(message);
       }
       return { ...decision, messages: [...decision.messages, ...additions] };
@@ -134,12 +153,10 @@ export function installContextGate(agent, getTerms) {
         state.checks++;
         const messages = agent.session.deriveMessages();
         for (const term of stepTerms) {
-          const text = entryText(term);
-          if ([...pending.values()].includes(text)) continue;
-          // Only an intact, plugin-sourced standalone payload counts; summaries
-          // and user copies containing identifiers alone do not prove presence.
-          const exists = hasTerm(messages, text);
-          if (exists) continue;
+          if ([...pending.values()].includes(term.id)) continue;
+          // Only an intact, plugin-sourced entry counts; summaries and user
+          // copies do not prove presence.
+          if (hasTerm(messages, term)) continue;
           agent.session.append('user/message', makeMessage(term), { surfaceOp: 'append' });
         }
         return '';

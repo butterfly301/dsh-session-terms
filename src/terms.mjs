@@ -14,6 +14,16 @@ export function renderTerm(term) {
   return JSON.stringify({ id: term.id, name: term.name, note: term.note });
 }
 
+/**
+ * Model-facing text for one provided term: the name, then the note.
+ * Identity travels in the message source, so the model never reads an id.
+ * @param {{ name: string, note: string }} term - the term to present.
+ * @returns the compact context entry.
+ */
+export function renderContext(term) {
+  return term.note ? `${term.name}\n${term.note}` : term.name;
+}
+
 export function matchTerms(text, terms) {
   const ids = new Set(findTermOccurrences(text, terms).map((hit) => hit.term.id));
   return terms.filter((term) => ids.has(term.id));

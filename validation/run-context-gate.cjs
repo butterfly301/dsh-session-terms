@@ -169,7 +169,9 @@ async function main() {
     assert.equal(gate.state.appended, 1);
     assert.equal(countNotes(request), 1);
     const note = request.messages.find((message) => message.source?.kind === 'session-terms');
-    assert.equal(Object.hasOwn(JSON.parse(textOf(note)), 'color'), false);
+    assert.equal(note.source.termId, terms[0].id);
+    assert.equal(textOf(note), '灯塔\n登录服务重构项目的代称');
+    assert.equal(textOf(note).includes(terms[0].id), false);
     compact();
     assert.equal(countNotes(await send('灯塔')), 1);
     assert.equal(gate.state.appended, 2);
@@ -197,9 +199,8 @@ async function main() {
     const request = await send('灯塔');
     const notes = request.messages.filter((message) => message.source?.kind === 'session-terms');
     assert.equal(gate.state.appended, 3);
-    assert.equal(JSON.parse(textOf(notes.at(-1))).note, original);
-    for (const note of notes)
-      assert.equal(Object.hasOwn(JSON.parse(textOf(note)), 'version'), false);
+    assert.equal(textOf(notes.at(-1)), `灯塔\n${original}`);
+    for (const note of notes) assert.equal(textOf(note).startsWith('{'), false);
     await send('灯塔');
     assert.equal(gate.state.appended, 3);
   });
@@ -284,7 +285,7 @@ async function main() {
     const last = request.messages
       .filter((message) => message.source?.kind === 'session-terms')
       .at(-1);
-    assert.equal(JSON.parse(textOf(last)).note, '');
+    assert.equal(textOf(last), '灯塔计划');
     assert.equal(gate.state.appended, 3);
   });
   await test('取消发生在异步请求准备阶段时不注入', async ({
@@ -617,7 +618,7 @@ async function main() {
     const request = await send(original);
     const notes = request.messages.filter((message) => message.source?.kind === 'session-terms');
     assert.equal(notes.length, 3);
-    assert.equal(JSON.parse(textOf(notes.at(-1))).name, original);
+    assert.equal(textOf(notes.at(-1)).split('\n')[0], original);
     await send(original);
     assert.equal(gate.state.appended, 3);
   });
@@ -632,7 +633,8 @@ async function main() {
     );
     assert.equal(countNotes(request), 1);
     const note = request.messages.find((message) => message.source?.kind === 'session-terms');
-    assert.equal(JSON.parse(textOf(note)).id, terms[0].id);
+    assert.equal(note.source.termId, terms[0].id);
+    assert.equal(textOf(note).includes(terms[0].id), false);
     assert.equal(gate.state.appended, 1);
   });
   await test('不完整的只读查询结果不能代替完整备注', async ({

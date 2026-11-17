@@ -5,6 +5,7 @@ import {
   changeState,
   emptyState,
   createTermsRepository,
+  renderContext,
   renderTerm,
   TermsError,
 } from '../src/terms.mjs';
@@ -347,4 +348,21 @@ test('并发新增不丢失，写入失败不发布状态，会话相互隔离',
   fail = true;
   await assert.rejects(repository.call('A', 'clear'), /disk unavailable/);
   assert.equal(repository.get('A').terms.length, 2);
+});
+
+test('提供的上下文是名称加备注的紧凑文本，不含标识或 JSON 包装', () => {
+  assert.equal(
+    renderContext({ name: '灯塔', note: '登录服务重构项目的代称' }),
+    '灯塔\n登录服务重构项目的代称',
+  );
+  assert.equal(renderContext({ name: '灯塔', note: '' }), '灯塔');
+  assert.equal(renderContext({ name: '灯塔', note: '第一行\n第二行' }), '灯塔\n第一行\n第二行');
+  for (const term of [
+    { id: 'abc', name: '灯塔', note: '代称' },
+    { id: 'abc', name: '灯塔', note: '' },
+  ]) {
+    const text = renderContext(term);
+    assert.equal(text.includes(term.id), false);
+    assert.equal(text.includes('{'), false);
+  }
 });
