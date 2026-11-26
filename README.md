@@ -1,3 +1,5 @@
+简体中文 · [English](README.en.md)
+
 # 会话术语库
 
 在 DSH 输入框上方保存当前会话的术语和备注，方便重复输入，并让 AI 在遇到术语时了解它的含义，作用域只在本会话，而非全局或项目级。
@@ -79,6 +81,8 @@ npm run format:check
 ```
 
 界面跟随 DSH 客户端语言，提供中文和英文。新增语言、模块结构和宿主集成测试见[实现说明](docs/implementation-options.md)，行为约定见[功能规格](docs/requirements.md)。
+
+如果这个插件对你有用，欢迎给仓库点一个 star。
 
 ## 许可证
 
